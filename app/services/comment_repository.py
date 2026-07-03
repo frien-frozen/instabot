@@ -1,0 +1,94 @@
+"""Comment persistence and duplicate-protection repository."""
+
+import logging
+from datetime import UTC, datetime
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.comment import Comment
+from app.schemas import CommentCreate
+from app.utils.logging import get_logger, log_event
+
+logger = get_logger(__name__)
+
+
+class CommentRepository:
+    """
+    Data access layer for comment records.
+
+    Encapsulates duplicate detection and reply state management so route
+    handlers remain thin.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_by_comment_id(self, comment_id: str) -> Comment | None:
+        """Return an existing comment by its Instagram comment ID."""
+        result = await self._session.execute(
+            select(Comment).where(Comment.comment_id == comment_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def has_been_replied(self, comment_id: str) -> bool:
+        """Return True if this comment has already received a reply."""
+        comment = await self.get_by_comment_id(comment_id)
+        return comment is not None and comment.replied
+
+    async def create(self, data: CommentCreate) -> Comment | None:
+        """
+        Persist a new comment.
+
+        Returns None if the comment already exists (duplicate webhook delivery).
+        """
+        existing = await self.get_by_comment_id(data.comment_id)
+        if existing is not None:
+            log_event(
+                logger,
+                logging.INFO,
+                "comment_duplicate_skipped",
+                comment_id=data.comment_id,
+            )
+            return None
+
+        comment = Comment(
+            comment_id=data.comment_id,
+            username=data.username,
+            message=data.message,
+            media_id=data.media_id,
+            parent_comment_id=data.parent_comment_id,
+            account_id=data.account_id,
+            replied=False,
+        )
+        self._session.add(comment)
+        await self._session.flush()
+        log_event(
+            logger,
+            logging.INFO,
+            "comment_stored",
+            comment_id=data.comment_id,
+            username=data.username,
+            media_id=data.media_id,
+        )
+        return comment
+
+    async def mark_replied(self, comment_id: str, reply_text: str) -> Comment | None:
+        """Mark a comment as replied and store the generated reply text."""
+        comment = await self.get_by_comment_id(comment_id)
+        if comment is None:
+            return None
+
+        comment.replied = True
+        comment.reply_text = reply_text
+        comment.replied_at = datetime.now(UTC)
+        await self._session.flush()
+
+        log_event(
+            logger,
+            logging.INFO,
+            "comment_marked_replied",
+            comment_id=comment_id,
+            reply_text=reply_text,
+        )
+        return comment
