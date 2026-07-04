@@ -75,8 +75,21 @@ class CommentCreate(BaseModel):
     username: str
     message: str
     media_id: str
+    from_id: Optional[str] = None
     parent_comment_id: Optional[str] = None
     account_id: Optional[str] = None
+
+
+class MessageCreate(BaseModel):
+    """Internal schema for an incoming Instagram Direct Message."""
+
+    message_id: str
+    sender_id: str
+    recipient_id: str
+    text: str
+    timestamp: Optional[int] = None
+    account_id: Optional[str] = None
+    is_echo: bool = False
 
 
 class CommentResponse(BaseModel):
@@ -111,4 +124,17 @@ class InstagramHealthResponse(BaseModel):
     graph_host: str
     username: Optional[str] = None
     user_id: Optional[str] = None
+    error: Optional[str] = None
+
+
+class MessagesHealthResponse(BaseModel):
+    """Instagram messaging capability status."""
+
+    status: str
+    graph_host: str
+    messaging_webhook_enabled: bool
+    access_token_valid: bool
+    authenticated_user_id: Optional[str] = None
+    username: Optional[str] = None
+    permissions_note: Optional[str] = None
     error: Optional[str] = None

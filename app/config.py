@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     meta_access_token: str = Field(..., alias="META_ACCESS_TOKEN")
     meta_api_version: str = Field(default="v21.0", alias="META_API_VERSION")
     instagram_account_id: str = Field(default="", alias="INSTAGRAM_ACCOUNT_ID")
+    # Alias for instagram_account_id
+    instagram_user_id: str = Field(default="", alias="INSTAGRAM_USER_ID")
     # Use graph.instagram.com for Instagram Business Login tokens (IGAA...)
     # Use graph.facebook.com for Facebook Page-linked Instagram tokens
     meta_graph_host: str = Field(default="graph.instagram.com", alias="META_GRAPH_HOST")
@@ -57,6 +59,11 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Whether the app is running in production mode."""
         return self.app_env.lower() == "production"
+
+    @property
+    def resolved_instagram_user_id(self) -> str:
+        """Authenticated Instagram user ID from env (INSTAGRAM_USER_ID or INSTAGRAM_ACCOUNT_ID)."""
+        return self.instagram_user_id or self.instagram_account_id
 
 
 @lru_cache

@@ -22,14 +22,14 @@ class CommentProcessor:
     End-to-end comment processing pipeline.
 
     Pipeline steps:
-      1. Duplicate check
-      2. Spam detection
-      3. Random human-like delay
-      4. Gemini reply generation
-      5. Instagram API reply
-      6. Persist reply state
-
-    Runs asynchronously after webhook acknowledgment to keep Meta happy.
+      1. Fetch comment from Graph API (validation + logging)
+      2. Duplicate check
+      3. Ignore own comments (prevent reply loops)
+      4. Spam detection
+      5. Random human-like delay
+      6. Gemini reply generation
+      7. Instagram API reply
+      8. Persist reply state
     """
 
     def __init__(
@@ -52,6 +52,38 @@ class CommentProcessor:
             comment_id=data.comment_id,
             username=data.username,
         ):
+            authenticated_id = await self._instagram.get_authenticated_user_id()
+
+            # Validate comment via Graph API before any filtering
+            try:
+                comment_details = await self._instagram.fetch_comment_details(data.comment_id)
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "comment_fetch_validated",
+                    comment_id=data.comment_id,
+                    details=comment_details,
+                )
+                from_obj = comment_details.get("from") or {}
+                if isinstance(from_obj, dict):
+                    if from_obj.get("id"):
+                        data.from_id = str(from_obj["id"])
+                    if from_obj.get("username"):
+                        data.username = str(from_obj["username"])
+                    if comment_details.get("text"):
+                        data.message = str(comment_details["text"])
+            except InstagramAPIError as exc:
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "comment_fetch_failed",
+                    comment_id=data.comment_id,
+                    status_code=exc.status_code,
+                    error=str(exc),
+                    response_body=exc.response_body,
+                )
+                return
+
             async with self._session_factory() as session:
                 repo = CommentRepository(session)
 
@@ -62,6 +94,20 @@ class CommentProcessor:
                         logging.INFO,
                         "duplicate_reply_skipped",
                         comment_id=data.comment_id,
+                    )
+                    return
+
+                # Ignore comments from our own account (prevents infinite loops)
+                comment_author_id = data.from_id or ""
+                if comment_author_id and comment_author_id == authenticated_id:
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "ignoring_own_comment",
+                        comment_id=data.comment_id,
+                        from_id=comment_author_id,
+                        authenticated_user_id=authenticated_id,
+                        username=data.username,
                     )
                     return
 
@@ -92,6 +138,7 @@ class CommentProcessor:
                     "incoming_comment",
                     comment_id=data.comment_id,
                     username=data.username,
+                    from_id=data.from_id,
                     comment_text=data.message,
                     media_id=data.media_id,
                     parent_comment_id=data.parent_comment_id,
@@ -111,7 +158,7 @@ class CommentProcessor:
                 )
                 await asyncio.sleep(delay)
 
-                # Re-check duplicate after delay (race condition guard)
+                # Re-check duplicate and own-comment after delay
                 if await repo.has_been_replied(data.comment_id):
                     log_event(
                         logger,

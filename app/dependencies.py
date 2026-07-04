@@ -11,6 +11,7 @@ from app.services.comment_processor import CommentProcessor
 from app.services.comment_repository import CommentRepository
 from app.services.gemini_service import GeminiService
 from app.services.instagram_service import InstagramService
+from app.services.message_processor import MessageProcessor
 
 
 @lru_cache
@@ -29,6 +30,17 @@ def get_comment_processor() -> CommentProcessor:
     """Build the comment processing pipeline with injected dependencies."""
     settings = get_settings()
     return CommentProcessor(
+        settings=settings,
+        session_factory=get_session_factory(settings),
+        gemini_service=get_gemini_service(),
+        instagram_service=get_instagram_service(),
+    )
+
+
+def get_message_processor() -> MessageProcessor:
+    """Build the DM processing pipeline with injected dependencies."""
+    settings = get_settings()
+    return MessageProcessor(
         settings=settings,
         session_factory=get_session_factory(settings),
         gemini_service=get_gemini_service(),

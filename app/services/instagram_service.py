@@ -43,8 +43,7 @@ class InstagramService:
     """
     Instagram Graph API service.
 
-    Handles comment replies, media lookups, and resilient HTTP communication.
-    Future multi-account support: pass account-specific access tokens.
+    Handles comment replies, media lookups, messaging, and resilient HTTP communication.
     """
 
     RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
@@ -55,6 +54,8 @@ class InstagramService:
         self._access_token = settings.meta_access_token.strip()
         self._timeout = settings.http_timeout_seconds
         self._max_retries = settings.http_max_retries
+        self._cached_user_id: str | None = None
+        self._cached_username: str | None = None
 
     def _build_url(self, path: str) -> str:
         """Build a full Graph API URL."""
@@ -181,6 +182,111 @@ class InstagramService:
         raise InstagramAPIError(
             f"Request failed after {self._max_retries} attempts: {last_error}"
         )
+
+    async def get_authenticated_user_id(self) -> str:
+        """Return the authenticated Instagram user ID (cached or from /me)."""
+        if self._cached_user_id:
+            return self._cached_user_id
+
+        configured = self._settings.resolved_instagram_user_id
+        if configured:
+            self._cached_user_id = configured
+            return configured
+
+        profile = await self.validate_token()
+        user_id = str(profile.get("user_id") or profile.get("id") or "")
+        self._cached_user_id = user_id
+        self._cached_username = profile.get("username")
+        return user_id
+
+    async def fetch_comment_details(self, comment_id: str) -> dict[str, Any]:
+        """
+        Fetch comment metadata with detailed request/response logging.
+
+        Logs URL, HTTP status, and full body. On 400/403 logs the complete error
+        without suppressing details. Returns parsed JSON on success.
+        """
+        path = comment_id
+        params = {
+            "access_token": self._access_token,
+            "fields": "id,text,from,parent_id,media",
+        }
+        url = self._build_url(path)
+
+        log_event(
+            logger,
+            logging.INFO,
+            "comment_fetch_request",
+            comment_id=comment_id,
+            request_url=_redact_url(f"{url}?fields=id,text,from,parent_id,media&access_token=***"),
+        )
+
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.get(url, params=params)
+
+        log_event(
+            logger,
+            logging.INFO,
+            "comment_fetch_response",
+            comment_id=comment_id,
+            status_code=response.status_code,
+            request_url=_redact_url(str(response.url)),
+            response_body=response.text[:4000],
+        )
+
+        if response.status_code in (400, 403):
+            log_event(
+                logger,
+                logging.ERROR,
+                "comment_fetch_error",
+                comment_id=comment_id,
+                status_code=response.status_code,
+                full_error_body=response.text,
+            )
+            try:
+                error_json = response.json()
+            except Exception:
+                error_json = response.text
+            raise InstagramAPIError(
+                f"Comment fetch failed (HTTP {response.status_code})",
+                status_code=response.status_code,
+                response_body=error_json,
+            )
+
+        self.handle_errors(response)
+        return response.json()
+
+    async def send_message(self, recipient_id: str, text: str) -> dict[str, Any]:
+        """
+        Send an Instagram Direct Message.
+
+        Uses POST /{ig-user-id}/messages with the Instagram Messaging API.
+        """
+        ig_user_id = await self.get_authenticated_user_id()
+        log_event(
+            logger,
+            logging.INFO,
+            "instagram_send_message_request",
+            recipient_id=recipient_id,
+            reply_text=text,
+            ig_user_id=ig_user_id,
+        )
+        result = await self._request(
+            "POST",
+            f"{ig_user_id}/messages",
+            json_body={
+                "recipient": {"id": recipient_id},
+                "message": {"text": text},
+            },
+        )
+        log_event(
+            logger,
+            logging.INFO,
+            "instagram_send_message_success",
+            recipient_id=recipient_id,
+            response=result,
+        )
+        return result
 
     async def validate_token(self) -> dict[str, Any]:
         """

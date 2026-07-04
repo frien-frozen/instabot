@@ -7,7 +7,7 @@ from starlette.responses import Response
 
 from app.config import Settings, get_settings
 from app.dependencies import get_instagram_service
-from app.schemas import HealthResponse, InstagramHealthResponse
+from app.schemas import HealthResponse, InstagramHealthResponse, MessagesHealthResponse
 from app.services.instagram_service import InstagramAPIError, InstagramService
 
 router = APIRouter(tags=["health"])
@@ -50,6 +50,39 @@ async def instagram_health_check(
         )
 
 
+@router.get("/health/messages", response_model=MessagesHealthResponse)
+async def messages_health_check(
+    settings: Settings = Depends(get_settings),
+    instagram: InstagramService = Depends(get_instagram_service),
+) -> MessagesHealthResponse:
+    """Verify Instagram messaging webhook readiness and token validity."""
+    messaging_enabled = True  # App subscribes to messaging via Meta dashboard
+    try:
+        profile = await instagram.validate_token()
+        user_id = str(profile.get("user_id") or profile.get("id") or "")
+        username = profile.get("username")
+        return MessagesHealthResponse(
+            status="ok",
+            graph_host=settings.meta_graph_host,
+            messaging_webhook_enabled=messaging_enabled,
+            access_token_valid=True,
+            authenticated_user_id=user_id,
+            username=username,
+            permissions_note=(
+                "Ensure 'messages' webhook field is subscribed in Meta dashboard "
+                "and token has instagram_business_manage_messages permission."
+            ),
+        )
+    except InstagramAPIError as exc:
+        return MessagesHealthResponse(
+            status="error",
+            graph_host=settings.meta_graph_host,
+            messaging_webhook_enabled=messaging_enabled,
+            access_token_valid=False,
+            error=str(exc),
+        )
+
+
 @router.get("/")
 async def root() -> dict[str, str]:
     """Root endpoint with basic service info."""
@@ -58,6 +91,8 @@ async def root() -> dict[str, str]:
         "description": "AI-powered Instagram comment auto-reply SaaS",
         "webhook": "/webhook",
         "health": "/health",
+        "health_instagram": "/health/instagram",
+        "health_messages": "/health/messages",
         "docs": "/docs",
     }
 

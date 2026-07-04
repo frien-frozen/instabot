@@ -8,17 +8,18 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from fastapi.responses import PlainTextResponse
 
 from app.config import Settings, get_settings
-from app.dependencies import get_comment_processor
-from app.schemas import CommentCreate, InstagramWebhookPayload
+from app.dependencies import get_comment_processor, get_message_processor
+from app.schemas import CommentCreate, InstagramWebhookPayload, MessageCreate
 from app.services.comment_processor import CommentProcessor
+from app.services.message_processor import MessageProcessor
 from app.utils.logging import get_logger, log_event
+from app.utils.webhook_logging import log_all_webhook_events
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 
-# Supported Instagram webhook fields
-SUPPORTED_FIELDS = frozenset({"comments", "live_comments"})
+COMMENT_FIELDS = frozenset({"comments", "live_comments"})
 
 
 @router.get("")
@@ -28,17 +29,8 @@ async def verify_webhook(
     hub_challenge: str = Query(alias="hub.challenge"),
     settings: Settings = Depends(get_settings),
 ) -> PlainTextResponse:
-    """
-    Meta webhook verification endpoint (GET).
-
-    Meta sends a challenge that must be echoed back when the verify token matches.
-    """
-    log_event(
-        logger,
-        logging.INFO,
-        "webhook_verification_attempt",
-        hub_mode=hub_mode,
-    )
+    """Meta webhook verification endpoint (GET)."""
+    log_event(logger, logging.INFO, "webhook_verification_attempt", hub_mode=hub_mode)
 
     if hub_mode == "subscribe" and hub_verify_token == settings.verify_token:
         log_event(logger, logging.INFO, "webhook_verification_success")
@@ -52,20 +44,12 @@ async def verify_webhook(
 
 
 def _normalize_webhook_body(body: dict[str, Any], settings: Settings) -> dict[str, Any]:
-    """
-    Normalize Meta webhook payloads into the standard envelope.
-
-    Meta's dashboard "Send to My Server" test sends a bare change object:
-      {"field": "comments", "value": {...}}
-
-    Live deliveries use the full envelope:
-      {"object": "instagram", "entry": [{"changes": [...]}]}
-    """
+    """Normalize bare Meta test payloads into the standard envelope."""
     if "object" in body and "entry" in body:
         return body
 
     if "field" in body and "value" in body:
-        account_id = settings.instagram_account_id or "unknown"
+        account_id = settings.resolved_instagram_user_id or "unknown"
         log_event(
             logger,
             logging.INFO,
@@ -75,61 +59,107 @@ def _normalize_webhook_body(body: dict[str, Any], settings: Settings) -> dict[st
         )
         return {
             "object": "instagram",
-            "entry": [
-                {
-                    "id": account_id,
-                    "changes": [body],
-                }
-            ],
+            "entry": [{"id": account_id, "changes": [body]}],
         }
 
     return body
 
 
-def _extract_comments(payload: InstagramWebhookPayload) -> list[CommentCreate]:
-    """Parse webhook payload and extract comment records."""
+def _extract_comments(body: dict[str, Any]) -> list[CommentCreate]:
+    """Extract comment records from a webhook body."""
     comments: list[CommentCreate] = []
 
-    if payload.object != "instagram":
+    if body.get("object") != "instagram":
         return comments
 
-    for entry in payload.entry:
-        account_id = entry.id
-
-        if not entry.changes:
+    for entry in body.get("entry") or []:
+        if not isinstance(entry, dict):
             continue
+        account_id = str(entry.get("id", ""))
 
-        for change in entry.changes:
-            if change.field not in SUPPORTED_FIELDS:
-                log_event(
-                    logger,
-                    logging.DEBUG,
-                    "unsupported_webhook_field",
-                    field=change.field,
-                )
+        for change in entry.get("changes") or []:
+            if not isinstance(change, dict):
+                continue
+            if change.get("field") not in COMMENT_FIELDS:
                 continue
 
-            value = change.value
-            if isinstance(value, dict):
-                comment_id = value.get("id")
-                if not comment_id:
-                    continue
+            value = change.get("value")
+            if not isinstance(value, dict):
+                continue
 
-                from_user = value.get("from", {})
-                media = value.get("media", {})
+            comment_id = value.get("id")
+            if not comment_id:
+                continue
 
-                comments.append(
-                    CommentCreate(
-                        comment_id=str(comment_id),
-                        username=from_user.get("username", "unknown"),
-                        message=value.get("text", ""),
-                        media_id=str(media.get("id", "")),
-                        parent_comment_id=value.get("parent_id"),
-                        account_id=account_id,
-                    )
+            from_user = value.get("from") or {}
+            media = value.get("media") or {}
+
+            comments.append(
+                CommentCreate(
+                    comment_id=str(comment_id),
+                    username=from_user.get("username", "unknown") if isinstance(from_user, dict) else "unknown",
+                    message=value.get("text", "") or "",
+                    media_id=str(media.get("id", "")) if isinstance(media, dict) else "",
+                    from_id=str(from_user.get("id", "")) if isinstance(from_user, dict) and from_user.get("id") else None,
+                    parent_comment_id=value.get("parent_id"),
+                    account_id=account_id,
                 )
+            )
 
     return comments
+
+
+def _extract_messages(body: dict[str, Any]) -> list[MessageCreate]:
+    """Extract incoming text DM events from a webhook body."""
+    messages: list[MessageCreate] = []
+
+    if body.get("object") != "instagram":
+        return messages
+
+    for entry in body.get("entry") or []:
+        if not isinstance(entry, dict):
+            continue
+        account_id = str(entry.get("id", ""))
+
+        for event in entry.get("messaging") or []:
+            if not isinstance(event, dict):
+                continue
+
+            # Skip delivery, read, and reaction events
+            if event.get("read") or event.get("delivery") or event.get("reaction"):
+                continue
+
+            message = event.get("message")
+            if not isinstance(message, dict):
+                continue
+
+            is_echo = bool(message.get("is_echo"))
+
+            # Text-only for now — skip attachment-only messages
+            text = message.get("text")
+            if not text or not str(text).strip():
+                continue
+
+            message_id = message.get("mid")
+            sender = event.get("sender") or {}
+            recipient = event.get("recipient") or {}
+
+            if not message_id or not isinstance(sender, dict):
+                continue
+
+            messages.append(
+                MessageCreate(
+                    message_id=str(message_id),
+                    sender_id=str(sender.get("id", "")),
+                    recipient_id=str(recipient.get("id", "")) if isinstance(recipient, dict) else "",
+                    text=str(text),
+                    timestamp=event.get("timestamp"),
+                    account_id=account_id,
+                    is_echo=is_echo,
+                )
+            )
+
+    return messages
 
 
 @router.post("")
@@ -137,20 +167,15 @@ async def receive_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
     settings: Settings = Depends(get_settings),
-    processor: CommentProcessor = Depends(get_comment_processor),
+    comment_processor: CommentProcessor = Depends(get_comment_processor),
+    message_processor: MessageProcessor = Depends(get_message_processor),
 ) -> dict[str, Any]:
-    """
-    Receive Instagram webhook events (POST).
-
-    Acknowledges immediately and processes comments in the background
-    to meet Meta's 20-second response requirement.
-    """
+    """Receive Instagram webhook events (POST)."""
     raw_body = await request.body()
     headers = dict(request.headers)
     client_ip = request.client.host if request.client else "unknown"
     forwarded_for = headers.get("x-forwarded-for", "")
 
-    # Temporary debug logging — remove once Meta delivery is confirmed
     logger.info("RAW BODY: %r", raw_body)
     logger.info("HEADERS: %s", headers)
     log_event(
@@ -177,63 +202,34 @@ async def receive_webhook(
         logger.exception("JSON parse failed: payload is not an object")
         return {"ok": False, "error": "invalid_json"}
 
-    log_event(
-        logger,
-        logging.INFO,
-        "webhook_received",
-        client_ip=client_ip,
-        object_type=body.get("object"),
-        entry_count=len(body.get("entry", [])),
-        raw_keys=list(body.keys()),
-    )
+    # Log every event in full detail BEFORE any filtering
+    log_all_webhook_events(body, client_ip=client_ip)
 
     body = _normalize_webhook_body(body, settings)
 
-    try:
-        payload = InstagramWebhookPayload.model_validate(body)
-    except Exception as exc:
-        log_event(logger, logging.WARNING, "webhook_validation_warning", error=str(exc))
-        # Return 200 anyway so Meta doesn't disable the webhook
-        return {"status": "ignored", "reason": "invalid_payload"}
-
-    if payload.object != "instagram":
-        log_event(
-            logger,
-            logging.DEBUG,
-            "unsupported_webhook_object",
-            object_type=payload.object,
-        )
+    if body.get("object") != "instagram":
         return {"status": "ignored", "reason": "unsupported_object"}
 
-    comments = _extract_comments(payload)
-
-    if not comments:
-        # Log non-comment webhooks so they're visible in production debugging
-        entry = body.get("entry", [{}])[0] if body.get("entry") else {}
-        event_types: list[str] = []
-        if entry.get("messaging"):
-            event_types.append("messaging")
-        if entry.get("changes"):
-            fields = [c.get("field") for c in entry.get("changes", []) if isinstance(c, dict)]
-            event_types.extend(fields)
-        log_event(
-            logger,
-            logging.INFO,
-            "webhook_no_comments",
-            client_ip=client_ip,
-            account_id=entry.get("id"),
-            event_types=event_types or ["unknown"],
-        )
-        return {"status": "ok", "processed": "0"}
-
-    for comment_data in comments:
-        background_tasks.add_task(processor.process, comment_data)
+    comments = _extract_comments(body)
+    messages = _extract_messages(body)
 
     log_event(
         logger,
         logging.INFO,
-        "webhook_queued",
+        "webhook_dispatch",
+        client_ip=client_ip,
         comment_count=len(comments),
+        message_count=len(messages),
     )
 
-    return {"status": "ok", "processed": str(len(comments))}
+    for comment_data in comments:
+        background_tasks.add_task(comment_processor.process, comment_data)
+
+    for message_data in messages:
+        background_tasks.add_task(message_processor.process, message_data)
+
+    return {
+        "status": "ok",
+        "comments_queued": str(len(comments)),
+        "messages_queued": str(len(messages)),
+    }
