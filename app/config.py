@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     messages_enabled: bool = Field(default=True, alias="MESSAGES_ENABLED")
     mentions_enabled: bool = Field(default=True, alias="MENTIONS_ENABLED")
     story_mentions_enabled: bool = Field(default=True, alias="STORY_MENTIONS_ENABLED")
+    dm_history_limit: int = Field(default=20, alias="DM_HISTORY_LIMIT")
+
+    # Durability / retry
+    retry_on_startup: bool = Field(default=True, alias="RETRY_ON_STARTUP")
+    max_reply_attempts: int = Field(default=20, alias="MAX_REPLY_ATTEMPTS")
+    retry_batch_size: int = Field(default=200, alias="RETRY_BATCH_SIZE")
 
     # HTTP client
     http_timeout_seconds: int = Field(default=30, alias="HTTP_TIMEOUT_SECONDS")

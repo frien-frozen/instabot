@@ -168,6 +168,8 @@ class GeminiService:
         model: str,
         user_content: str,
         system_prompt: str,
+        *,
+        max_output_tokens: int = 100,
     ) -> str:
         response = await self._client.aio.models.generate_content(
             model=model,
@@ -175,7 +177,7 @@ class GeminiService:
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
                 temperature=0.9,
-                max_output_tokens=100,
+                max_output_tokens=max_output_tokens,
             ),
         )
         reply = (response.text or "").strip()
@@ -192,14 +194,16 @@ class GeminiService:
         *,
         personality_override: str | None = None,
         memory_context: str | None = None,
+        max_output_tokens: int = 100,
     ) -> str:
         """
-        Generate a natural reply for the given comment text.
+        Generate a natural reply for the given comment or DM text.
 
         Args:
-            comment_text: The Instagram comment to reply to.
-            personality_override: Optional custom system prompt (future feature).
-            memory_context: Optional conversation history (future feature).
+            comment_text: The latest user message to reply to.
+            personality_override: Optional custom system prompt.
+            memory_context: Optional prior conversation turns (DM history).
+            max_output_tokens: Cap on reply length (DMs use a higher limit).
 
         Returns:
             Generated reply text, stripped of surrounding whitespace.
@@ -208,10 +212,10 @@ class GeminiService:
         user_content = comment_text
 
         if memory_context:
-            user_content = f"Previous context:\n{memory_context}\n\nComment:\n{comment_text}"
-
-        if memory_context:
-            user_content = f"Previous context:\n{memory_context}\n\nComment:\n{comment_text}"
+            user_content = (
+                f"Conversation so far:\n{memory_context}\n\n"
+                f"Latest user message:\n{comment_text}"
+            )
 
         last_error: GeminiAPIError | None = None
 
@@ -223,11 +227,18 @@ class GeminiService:
                 model=model,
                 comment_text=comment_text,
                 system_prompt=system_prompt,
+                has_memory=bool(memory_context),
+                memory_turns=len(memory_context.splitlines()) if memory_context else 0,
             )
 
             for attempt in range(1, 4):
                 try:
-                    reply = await self._generate_with_model(model, user_content, system_prompt)
+                    reply = await self._generate_with_model(
+                        model,
+                        user_content,
+                        system_prompt,
+                        max_output_tokens=max_output_tokens,
+                    )
                     log_event(
                         logger,
                         logging.INFO,

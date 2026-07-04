@@ -171,6 +171,43 @@ def _message_from_payload(
     )
 
 
+def _story_mention_from_messaging(
+    *,
+    account_id: str,
+    event: dict[str, Any],
+) -> MentionCreate | None:
+    """Extract story mention events delivered via messaging webhooks."""
+    referral = event.get("referral")
+    if not isinstance(referral, dict):
+        return None
+
+    source = str(referral.get("source", "")).upper()
+    if source != "STORY_MENTION":
+        return None
+
+    sender = event.get("sender") or {}
+    if not isinstance(sender, dict) or not sender.get("id"):
+        return None
+
+    message = event.get("message") or {}
+    story = referral.get("story") or {}
+    mention_id = (
+        message.get("mid")
+        or story.get("id")
+        or f"story_{sender.get('id')}_{event.get('timestamp', '')}"
+    )
+
+    return MentionCreate(
+        mention_id=str(mention_id),
+        mention_type="story_mentions",
+        username=str(sender.get("username", "unknown")),
+        text=str(message.get("text", "") or "Story mention"),
+        from_id=str(sender.get("id")),
+        media_id=str(story.get("id")) if isinstance(story, dict) and story.get("id") else None,
+        account_id=account_id,
+    )
+
+
 def _extract_messages(body: dict[str, Any], settings: Settings) -> list[MessageCreate]:
     """Extract incoming text DM events from a webhook body."""
     messages: list[MessageCreate] = []
@@ -186,6 +223,9 @@ def _extract_messages(body: dict[str, Any], settings: Settings) -> list[MessageC
         # Format A: entry.messaging[] (Messenger-style envelope)
         for event in entry.get("messaging") or []:
             if not isinstance(event, dict):
+                continue
+
+            if _story_mention_from_messaging(account_id=account_id, event=event) is not None:
                 continue
 
             if event.get("read") or event.get("delivery") or event.get("reaction"):
@@ -237,6 +277,13 @@ def _extract_mentions(body: dict[str, Any], settings: Settings) -> list[MentionC
             continue
         account_id = _resolve_account_id(str(entry.get("id", "")), settings)
 
+        for event in entry.get("messaging") or []:
+            if not isinstance(event, dict):
+                continue
+            story_mention = _story_mention_from_messaging(account_id=account_id, event=event)
+            if story_mention is not None and settings.story_mentions_enabled:
+                mentions.append(story_mention)
+
         for change in entry.get("changes") or []:
             if not isinstance(change, dict):
                 continue
@@ -248,7 +295,21 @@ def _extract_mentions(body: dict[str, Any], settings: Settings) -> list[MentionC
             if not isinstance(value, dict):
                 continue
 
-            mention_id = value.get("id") or value.get("comment_id") or value.get("media_id")
+            from_user = value.get("from") or {}
+            media = value.get("media") or {}
+            media_id = (
+                str(media.get("id"))
+                if isinstance(media, dict) and media.get("id")
+                else value.get("media_id")
+            )
+
+            comment_id = value.get("comment_id")
+            if not comment_id and field == "mentions":
+                raw_id = value.get("id")
+                if raw_id and str(raw_id) != str(media_id):
+                    comment_id = raw_id
+
+            mention_id = comment_id or value.get("id") or media_id
             if not mention_id:
                 log_event(
                     logger,
@@ -259,18 +320,15 @@ def _extract_mentions(body: dict[str, Any], settings: Settings) -> list[MentionC
                 )
                 continue
 
-            from_user = value.get("from") or {}
-            media = value.get("media") or {}
-
             mentions.append(
                 MentionCreate(
                     mention_id=str(mention_id),
                     mention_type=str(field),
                     username=from_user.get("username", "unknown") if isinstance(from_user, dict) else "unknown",
                     text=value.get("text", "") or value.get("message", "") or "",
-                    comment_id=str(value.get("comment_id")) if value.get("comment_id") else None,
+                    comment_id=str(comment_id) if comment_id else None,
                     from_id=str(from_user.get("id", "")) if isinstance(from_user, dict) and from_user.get("id") else None,
-                    media_id=str(media.get("id", "")) if isinstance(media, dict) else value.get("media_id"),
+                    media_id=str(media_id) if media_id else None,
                     account_id=account_id,
                 )
             )

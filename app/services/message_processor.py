@@ -11,9 +11,12 @@ from app.schemas import MessageCreate
 from app.services.gemini_service import GeminiAPIError, GeminiService
 from app.services.instagram_service import InstagramAPIError, InstagramService
 from app.services.message_repository import MessageRepository
+from app.services.pending_reply_repository import PendingReplyRepository
 from app.utils.logging import get_logger, log_duration, log_event
 
 logger = get_logger(__name__)
+
+EVENT_TYPE = "message"
 
 
 class MessageProcessor:
@@ -41,13 +44,14 @@ class MessageProcessor:
         self._gemini = gemini_service
         self._instagram = instagram_service
 
-    async def process(self, data: MessageCreate) -> None:
+    async def process(self, data: MessageCreate, *, from_retry: bool = False) -> None:
         """Process a single incoming DM through the full pipeline."""
         with log_duration(
             logger,
             "message_processing",
             message_id=data.message_id,
             sender_id=data.sender_id,
+            from_retry=from_retry,
         ):
             if not self._settings.messages_enabled:
                 log_event(logger, logging.INFO, "messages_disabled", message_id=data.message_id)
@@ -100,6 +104,7 @@ class MessageProcessor:
 
             async with self._session_factory() as session:
                 repo = MessageRepository(session)
+                pending_repo = PendingReplyRepository(session)
 
                 if await repo.has_processed_message(data.message_id):
                     log_event(
@@ -108,6 +113,8 @@ class MessageProcessor:
                         "duplicate_dm_skipped",
                         message_id=data.message_id,
                     )
+                    await pending_repo.complete(EVENT_TYPE, data.message_id)
+                    await session.commit()
                     return
 
                 conversation = await repo.get_or_create_conversation(
@@ -124,16 +131,42 @@ class MessageProcessor:
                     timestamp=MessageRepository.timestamp_from_ms(data.timestamp),
                 )
                 if incoming is None:
-                    await session.commit()
-                    return
+                    existing = await repo.get_incoming_message(data.message_id)
+                    if existing and existing.reply_status in ("sent", "skipped"):
+                        await pending_repo.complete(EVENT_TYPE, data.message_id)
+                        await session.commit()
+                        return
 
+                await pending_repo.upsert(
+                    EVENT_TYPE,
+                    data.message_id,
+                    data.model_dump(mode="json"),
+                )
                 await session.commit()
 
             try:
                 prompt_override = self._settings.resolved_system_prompt or None
+
+                async with self._session_factory() as session:
+                    repo = MessageRepository(session)
+                    conversation = await repo.get_conversation_by_user(
+                        data.sender_id,
+                        account_id=data.account_id,
+                    )
+                    memory_context = ""
+                    if conversation is not None:
+                        memory_context = await repo.build_conversation_history(
+                            conversation.id,
+                            bot_user_id=authenticated_id,
+                            limit=self._settings.dm_history_limit,
+                            exclude_message_id=data.message_id,
+                        )
+
                 reply_text = await self._gemini.generate_reply(
                     data.text,
                     personality_override=prompt_override,
+                    memory_context=memory_context or None,
+                    max_output_tokens=256,
                 )
                 result = await self._instagram.send_message(data.sender_id, reply_text)
 
@@ -155,9 +188,12 @@ class MessageProcessor:
                         text=reply_text,
                         direction="outgoing",
                     )
+                    await repo.mark_reply_sent(data.message_id)
+                    await PendingReplyRepository(session).complete(EVENT_TYPE, data.message_id)
                     await session.commit()
 
             except GeminiAPIError as exc:
+                await self._record_failure(data, str(exc))
                 log_event(
                     logger,
                     logging.ERROR,
@@ -169,6 +205,7 @@ class MessageProcessor:
                 )
 
             except InstagramAPIError as exc:
+                await self._record_failure(data, str(exc))
                 log_event(
                     logger,
                     logging.ERROR,
@@ -181,6 +218,7 @@ class MessageProcessor:
                 )
 
             except Exception as exc:
+                await self._record_failure(data, str(exc))
                 log_event(
                     logger,
                     logging.ERROR,
@@ -188,3 +226,14 @@ class MessageProcessor:
                     message_id=data.message_id,
                     error=str(exc),
                 )
+
+    async def _record_failure(self, data: MessageCreate, error: str) -> None:
+        async with self._session_factory() as session:
+            repo = MessageRepository(session)
+            await repo.mark_reply_failed(data.message_id, error)
+            await PendingReplyRepository(session).record_failure(
+                EVENT_TYPE,
+                data.message_id,
+                error,
+            )
+            await session.commit()

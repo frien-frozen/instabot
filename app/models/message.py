@@ -29,6 +29,8 @@ class Message(Base):
         nullable=True,
     )
     direction: Mapped[str] = mapped_column(String(16), nullable=False)  # incoming | outgoing
+    reply_status: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    reply_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     conversation: Mapped["Conversation"] = relationship(  # noqa: F821
         "Conversation",

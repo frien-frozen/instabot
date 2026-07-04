@@ -23,11 +23,25 @@ class MessageRepository:
         self._session = session
 
     async def has_processed_message(self, message_id: str) -> bool:
-        """Return True if this message_id was already handled."""
+        """Return True if this incoming message already received a reply."""
         result = await self._session.execute(
             select(Message).where(Message.message_id == message_id)
         )
-        return result.scalar_one_or_none() is not None
+        message = result.scalar_one_or_none()
+        if message is None:
+            return False
+        if message.direction == "outgoing":
+            return True
+        return message.reply_status in ("sent", "skipped")
+
+    async def get_incoming_message(self, message_id: str) -> Message | None:
+        result = await self._session.execute(
+            select(Message).where(
+                Message.message_id == message_id,
+                Message.direction == "incoming",
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def get_or_create_conversation(
         self,
@@ -94,6 +108,7 @@ class MessageRepository:
             text=text,
             direction=direction,
             timestamp=timestamp,
+            reply_status="pending" if direction == "incoming" else None,
         )
         self._session.add(message)
         conversation.last_message = text
@@ -109,6 +124,73 @@ class MessageRepository:
             conversation_id=conversation.id,
         )
         return message
+
+    async def build_conversation_history(
+        self,
+        conversation_id: int,
+        *,
+        bot_user_id: str,
+        limit: int = 20,
+        exclude_message_id: str | None = None,
+    ) -> str:
+        """Format recent DM turns for Gemini context."""
+        query = (
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.timestamp.asc().nulls_last(), Message.id.asc())
+        )
+        if exclude_message_id:
+            query = query.where(Message.message_id != exclude_message_id)
+
+        result = await self._session.execute(query)
+        messages = list(result.scalars().all())
+        if limit > 0:
+            messages = messages[-limit:]
+
+        lines: list[str] = []
+        for message in messages:
+            if not message.text or not message.text.strip():
+                continue
+            role = "You" if message.direction == "outgoing" or message.sender_id == bot_user_id else "User"
+            lines.append(f"{role}: {message.text.strip()}")
+
+        return "\n".join(lines)
+
+    async def get_conversation_by_user(
+        self,
+        user_id: str,
+        *,
+        account_id: str | None = None,
+    ) -> Conversation | None:
+        query = select(Conversation).where(Conversation.user_id == user_id)
+        if account_id:
+            query = query.where(Conversation.account_id == account_id)
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def mark_reply_sent(self, message_id: str) -> None:
+        message = await self.get_incoming_message(message_id)
+        if message is None:
+            return
+        message.reply_status = "sent"
+        message.reply_error = None
+        await self._session.flush()
+
+    async def mark_reply_failed(self, message_id: str, error: str) -> None:
+        message = await self.get_incoming_message(message_id)
+        if message is None:
+            return
+        message.reply_status = "failed"
+        message.reply_error = error[:4000]
+        await self._session.flush()
+
+    async def mark_reply_skipped(self, message_id: str) -> None:
+        message = await self.get_incoming_message(message_id)
+        if message is None:
+            return
+        message.reply_status = "skipped"
+        message.reply_error = None
+        await self._session.flush()
 
     @staticmethod
     def timestamp_from_ms(ms: int | None) -> datetime | None:

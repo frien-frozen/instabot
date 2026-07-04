@@ -13,6 +13,7 @@ from app.services.gemini_service import GeminiService
 from app.services.instagram_service import InstagramService
 from app.services.mention_processor import MentionProcessor
 from app.services.message_processor import MessageProcessor
+from app.services.retry_service import RetryService
 
 
 @lru_cache
@@ -52,6 +53,17 @@ def get_mention_processor() -> MentionProcessor:
         session_factory=get_session_factory(settings),
         gemini_service=get_gemini_service(),
         instagram_service=get_instagram_service(),
+    )
+
+
+def get_retry_service() -> RetryService:
+    settings = get_settings()
+    return RetryService(
+        settings=settings,
+        session_factory=get_session_factory(settings),
+        comment_processor=get_comment_processor(),
+        message_processor=get_message_processor(),
+        mention_processor=get_mention_processor(),
     )
 
 

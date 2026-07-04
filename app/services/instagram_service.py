@@ -331,6 +331,38 @@ class InstagramService:
         )
         return result
 
+    async def send_private_reply_to_comment(
+        self,
+        comment_id: str,
+        text: str,
+    ) -> dict[str, Any]:
+        """Send a private DM reply tied to a comment (caption/mention use cases)."""
+        ig_user_id = await self.get_authenticated_user_id()
+        log_event(
+            logger,
+            logging.INFO,
+            "instagram_private_reply_request",
+            comment_id=comment_id,
+            reply_text=text,
+            ig_user_id=ig_user_id,
+        )
+        result = await self._request(
+            "POST",
+            f"{ig_user_id}/messages",
+            json_body={
+                "recipient": {"comment_id": comment_id},
+                "message": {"text": text},
+            },
+        )
+        log_event(
+            logger,
+            logging.INFO,
+            "instagram_private_reply_success",
+            comment_id=comment_id,
+            response=result,
+        )
+        return result
+
     async def get_media(self, media_id: str) -> dict[str, Any]:
         """Fetch metadata for an Instagram media object."""
         return await self._request(

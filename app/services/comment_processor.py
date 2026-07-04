@@ -11,10 +11,13 @@ from app.schemas import CommentCreate
 from app.services.comment_repository import CommentRepository
 from app.services.gemini_service import GeminiAPIError, GeminiService
 from app.services.instagram_service import InstagramAPIError, InstagramService
+from app.services.pending_reply_repository import PendingReplyRepository
 from app.utils.logging import get_logger, log_duration, log_event
 from app.utils.spam import is_spam
 
 logger = get_logger(__name__)
+
+EVENT_TYPE = "comment"
 
 
 class CommentProcessor:
@@ -44,13 +47,14 @@ class CommentProcessor:
         self._gemini = gemini_service
         self._instagram = instagram_service
 
-    async def process(self, data: CommentCreate) -> None:
+    async def process(self, data: CommentCreate, *, from_retry: bool = False) -> None:
         """Process a single incoming comment through the full pipeline."""
         with log_duration(
             logger,
             "comment_processing",
             comment_id=data.comment_id,
             username=data.username,
+            from_retry=from_retry,
         ):
             if not self._settings.comments_enabled:
                 log_event(logger, logging.INFO, "comments_disabled", comment_id=data.comment_id)
@@ -59,7 +63,6 @@ class CommentProcessor:
             authenticated_id = await self._instagram.get_authenticated_user_id()
             prompt_override = self._settings.resolved_system_prompt or None
 
-            # Validate comment via Graph API before any filtering
             try:
                 comment_details = await self._instagram.fetch_comment_details(data.comment_id)
                 log_event(
@@ -87,12 +90,13 @@ class CommentProcessor:
                     error=str(exc),
                     response_body=exc.response_body,
                 )
+                await self._record_failure(data, str(exc))
                 return
 
             async with self._session_factory() as session:
                 repo = CommentRepository(session)
+                pending_repo = PendingReplyRepository(session)
 
-                # Duplicate protection — never reply twice
                 if await repo.has_been_replied(data.comment_id):
                     log_event(
                         logger,
@@ -100,9 +104,10 @@ class CommentProcessor:
                         "duplicate_reply_skipped",
                         comment_id=data.comment_id,
                     )
+                    await pending_repo.complete(EVENT_TYPE, data.comment_id)
+                    await session.commit()
                     return
 
-                # Ignore comments from our own account (prevents infinite loops)
                 comment_author_id = data.from_id or ""
                 if comment_author_id and comment_author_id == authenticated_id:
                     log_event(
@@ -114,42 +119,53 @@ class CommentProcessor:
                         authenticated_user_id=authenticated_id,
                         username=data.username,
                     )
+                    await pending_repo.complete(EVENT_TYPE, data.comment_id)
+                    await session.commit()
                     return
 
                 comment = await repo.create(data)
                 if comment is None:
                     existing = await repo.get_by_comment_id(data.comment_id)
                     if existing is None or existing.replied:
+                        await pending_repo.complete(EVENT_TYPE, data.comment_id)
+                        await session.commit()
                         return
-                    comment = existing
 
-                # Spam detection
-                spam, reason = is_spam(data.message)
-                if spam:
-                    log_event(
-                        logger,
-                        logging.INFO,
-                        "spam_comment_ignored",
-                        comment_id=data.comment_id,
-                        reason=reason,
-                        comment_text=data.message,
-                    )
-                    await session.commit()
-                    return
+                await pending_repo.upsert(
+                    EVENT_TYPE,
+                    data.comment_id,
+                    data.model_dump(mode="json"),
+                )
+                await session.commit()
 
+            spam, reason = is_spam(data.message)
+            if spam:
                 log_event(
                     logger,
                     logging.INFO,
-                    "incoming_comment",
+                    "spam_comment_ignored",
                     comment_id=data.comment_id,
-                    username=data.username,
-                    from_id=data.from_id,
+                    reason=reason,
                     comment_text=data.message,
-                    media_id=data.media_id,
-                    parent_comment_id=data.parent_comment_id,
                 )
+                async with self._session_factory() as session:
+                    await PendingReplyRepository(session).complete(EVENT_TYPE, data.comment_id)
+                    await session.commit()
+                return
 
-                # Random delay for natural appearance
+            log_event(
+                logger,
+                logging.INFO,
+                "incoming_comment",
+                comment_id=data.comment_id,
+                username=data.username,
+                from_id=data.from_id,
+                comment_text=data.message,
+                media_id=data.media_id,
+                parent_comment_id=data.parent_comment_id,
+            )
+
+            if not from_retry:
                 delay = random.randint(
                     self._settings.reply_delay_min_seconds,
                     self._settings.reply_delay_max_seconds,
@@ -163,7 +179,8 @@ class CommentProcessor:
                 )
                 await asyncio.sleep(delay)
 
-                # Re-check duplicate and own-comment after delay
+            async with self._session_factory() as session:
+                repo = CommentRepository(session)
                 if await repo.has_been_replied(data.comment_id):
                     log_event(
                         logger,
@@ -171,57 +188,71 @@ class CommentProcessor:
                         "duplicate_reply_skipped_after_delay",
                         comment_id=data.comment_id,
                     )
+                    await PendingReplyRepository(session).complete(EVENT_TYPE, data.comment_id)
                     await session.commit()
                     return
 
-                try:
-                    reply_text = await self._gemini.generate_reply(
-                        data.message,
-                        personality_override=prompt_override,
-                    )
-                    await self._instagram.reply_comment(data.comment_id, reply_text)
+            try:
+                reply_text = await self._gemini.generate_reply(
+                    data.message,
+                    personality_override=prompt_override,
+                )
+                await self._instagram.reply_comment(data.comment_id, reply_text)
+
+                async with self._session_factory() as session:
+                    repo = CommentRepository(session)
                     await repo.mark_replied(data.comment_id, reply_text)
+                    await PendingReplyRepository(session).complete(EVENT_TYPE, data.comment_id)
                     await session.commit()
 
-                    log_event(
-                        logger,
-                        logging.INFO,
-                        "comment_reply_success",
-                        comment_id=data.comment_id,
-                        username=data.username,
-                        reply_text=reply_text,
-                        media_id=data.media_id,
-                    )
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "comment_reply_success",
+                    comment_id=data.comment_id,
+                    username=data.username,
+                    reply_text=reply_text,
+                    media_id=data.media_id,
+                )
 
-                except GeminiAPIError as exc:
-                    await session.rollback()
-                    log_event(
-                        logger,
-                        logging.ERROR,
-                        "gemini_reply_failed",
-                        comment_id=data.comment_id,
-                        model=exc.model,
-                        error=str(exc),
-                        hint="Set GEMINI_MODEL=gemini-2.5-flash in Render environment variables",
-                    )
+            except GeminiAPIError as exc:
+                await self._record_failure(data, str(exc))
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "gemini_reply_failed",
+                    comment_id=data.comment_id,
+                    model=exc.model,
+                    error=str(exc),
+                    hint="Set GEMINI_MODEL=gemini-2.5-flash in Render environment variables",
+                )
 
-                except InstagramAPIError as exc:
-                    await session.rollback()
-                    log_event(
-                        logger,
-                        logging.ERROR,
-                        "instagram_reply_failed",
-                        comment_id=data.comment_id,
-                        error=str(exc),
-                        status_code=exc.status_code,
-                    )
+            except InstagramAPIError as exc:
+                await self._record_failure(data, str(exc))
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "instagram_reply_failed",
+                    comment_id=data.comment_id,
+                    error=str(exc),
+                    status_code=exc.status_code,
+                )
 
-                except Exception as exc:
-                    await session.rollback()
-                    log_event(
-                        logger,
-                        logging.ERROR,
-                        "comment_processing_error",
-                        comment_id=data.comment_id,
-                        error=str(exc),
-                    )
+            except Exception as exc:
+                await self._record_failure(data, str(exc))
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "comment_processing_error",
+                    comment_id=data.comment_id,
+                    error=str(exc),
+                )
+
+    async def _record_failure(self, data: CommentCreate, error: str) -> None:
+        async with self._session_factory() as session:
+            await PendingReplyRepository(session).record_failure(
+                EVENT_TYPE,
+                data.comment_id,
+                error,
+            )
+            await session.commit()
