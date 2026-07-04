@@ -130,7 +130,7 @@ class InstagramService:
                             attempt=attempt,
                             status_code=exc.status_code,
                             error_code=exc.error_code,
-                            message=str(exc),
+                            error_detail=str(exc),
                         )
                         raise
 
@@ -153,7 +153,7 @@ class InstagramService:
                             logging.ERROR,
                             "instagram_network_error",
                             attempt=attempt,
-                            message=str(exc),
+                            error_detail=str(exc),
                         )
                         raise InstagramAPIError(
                             f"Network error: {exc}",
@@ -189,7 +189,7 @@ class InstagramService:
             logging.INFO,
             "instagram_reply_request",
             comment_id=comment_id,
-            message=message,
+            reply_text=message,
         )
         result = await self._request(
             "POST",

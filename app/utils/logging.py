@@ -15,14 +15,17 @@ class StructuredFormatter(logging.Formatter):
     """Format log records as structured key=value pairs."""
 
     def format(self, record: logging.LogRecord) -> str:
+        reserved = {"timestamp", "level", "logger", "event", "exception"}
         base = {
             "timestamp": self.formatTime(record, self.datefmt),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "event": record.getMessage(),
         }
         if hasattr(record, "extra_fields") and isinstance(record.extra_fields, dict):
-            base.update(record.extra_fields)
+            for key, value in record.extra_fields.items():
+                if key not in reserved:
+                    base[key] = value
         if record.exc_info:
             base["exception"] = self.formatException(record.exc_info)
         return " | ".join(f"{k}={v!r}" for k, v in base.items())

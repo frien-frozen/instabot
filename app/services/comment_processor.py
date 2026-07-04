@@ -81,7 +81,7 @@ class CommentProcessor:
                         "spam_comment_ignored",
                         comment_id=data.comment_id,
                         reason=reason,
-                        message=data.message,
+                        comment_text=data.message,
                     )
                     await session.commit()
                     return
@@ -92,7 +92,7 @@ class CommentProcessor:
                     "incoming_comment",
                     comment_id=data.comment_id,
                     username=data.username,
-                    message=data.message,
+                    comment_text=data.message,
                     media_id=data.media_id,
                     parent_comment_id=data.parent_comment_id,
                 )
