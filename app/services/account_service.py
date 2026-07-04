@@ -54,6 +54,21 @@ class AccountService:
         async with self._session_factory() as session:
             return await self._bootstrap_default_account(session)
 
+    async def get_default_account(self) -> InstagramAccount | None:
+        """Return the primary active account, bootstrapping from env when needed."""
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(InstagramAccount)
+                .where(InstagramAccount.is_active.is_(True))
+                .order_by(InstagramAccount.id.asc())
+                .limit(1)
+            )
+            account = result.scalar_one_or_none()
+            if account is not None:
+                return account
+
+        return await self.bootstrap_default_account()
+
     async def _bootstrap_default_account(self, session: AsyncSession) -> InstagramAccount | None:
         ig_user_id = self._settings.resolved_instagram_user_id
         token = self._settings.meta_access_token.strip()

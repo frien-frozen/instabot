@@ -149,3 +149,21 @@ class GeminiHealthResponse(BaseModel):
     recommended_models: List[str] = Field(default_factory=list)
     error: Optional[str] = None
     hint: Optional[str] = None
+
+
+class ImportExistingAccountResponse(BaseModel):
+    """Dashboard import payload for an already-connected Instagram account."""
+
+    instagram_id: str
+    username: str
+    name: str = ""
+    profile_picture: str = ""
+    system_prompt: str
+    reply_comments: bool
+    reply_messages: bool
+    reply_mentions: bool
+    reply_story_mentions: bool
+    delay_min: int
+    delay_max: int
+    language_mode: str = "auto"
+    enabled: bool

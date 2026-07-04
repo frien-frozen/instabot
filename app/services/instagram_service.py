@@ -310,6 +310,14 @@ class InstagramService:
             params={"fields": "user_id,username,name"},
         )
 
+    async def fetch_account_profile(self) -> dict[str, Any]:
+        """Fetch authenticated Instagram profile for dashboard import."""
+        return await self._request(
+            "GET",
+            "me",
+            params={"fields": "user_id,username,name,profile_picture_url"},
+        )
+
     async def reply_comment(
         self,
         comment_id: str,

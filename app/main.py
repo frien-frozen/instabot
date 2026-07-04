@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from app.config import get_settings
 from app.database import close_db, get_engine, get_session_factory, run_alembic_migrations
 from app.middleware import RequestLoggingMiddleware
-from app.routes import health_router, webhook_router
+from app.routes import api_router, health_router, webhook_router
 from app.services.gemini_service import GeminiAPIError, GeminiService
 from app.services.instagram_service import InstagramAPIError, InstagramService
 from app.services.account_service import AccountService
@@ -112,6 +112,7 @@ def create_app() -> FastAPI:
 
     app.add_middleware(RequestLoggingMiddleware)
     app.include_router(health_router)
+    app.include_router(api_router)
     app.include_router(webhook_router)
 
     return app
