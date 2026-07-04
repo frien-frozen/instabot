@@ -57,6 +57,16 @@ class InstagramService:
         self._cached_user_id: str | None = None
         self._cached_username: str | None = None
 
+    @classmethod
+    def for_account(cls, settings: Settings, account: Any) -> InstagramService:
+        """Build an API client scoped to a database InstagramAccount row."""
+        svc = cls(settings)
+        svc._access_token = account.access_token.strip()
+        svc._base_url = account.graph_base_url
+        svc._cached_user_id = account.instagram_user_id
+        svc._cached_username = account.username
+        return svc
+
     def _build_url(self, path: str) -> str:
         """Build a full Graph API URL."""
         return f"{self._base_url}/{path.lstrip('/')}"

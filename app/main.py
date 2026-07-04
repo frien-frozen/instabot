@@ -7,11 +7,12 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI
 
 from app.config import get_settings
-from app.database import close_db, get_engine, run_alembic_migrations
+from app.database import close_db, get_engine, get_session_factory, run_alembic_migrations
 from app.middleware import RequestLoggingMiddleware
 from app.routes import health_router, webhook_router
 from app.services.gemini_service import GeminiAPIError, GeminiService
 from app.services.instagram_service import InstagramAPIError, InstagramService
+from app.services.account_service import AccountService
 from app.utils.logging import get_logger, log_event, setup_logging
 
 logger = get_logger(__name__)
@@ -32,9 +33,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     get_engine(settings)
 
+    # Bootstrap default account from env into PostgreSQL
+    account_service = AccountService(settings, get_session_factory(settings))
+    bootstrapped = await account_service.bootstrap_default_account()
+    if bootstrapped:
+        log_event(
+            logger,
+            logging.INFO,
+            "default_account_ready",
+            account_id=bootstrapped.id,
+            instagram_user_id=bootstrapped.instagram_user_id,
+            username=bootstrapped.username,
+        )
+
     # Validate Instagram token at startup — surfaces code 190 immediately in logs
     try:
         ig = InstagramService(settings)
+        if bootstrapped:
+            ig = InstagramService.for_account(settings, bootstrapped)
         profile = await ig.validate_token()
         log_event(
             logger,
