@@ -138,3 +138,14 @@ class MessagesHealthResponse(BaseModel):
     username: Optional[str] = None
     permissions_note: Optional[str] = None
     error: Optional[str] = None
+
+
+class GeminiHealthResponse(BaseModel):
+    """Gemini model validation status."""
+
+    status: str
+    model: str
+    test_reply: Optional[str] = None
+    recommended_models: List[str] = Field(default_factory=list)
+    error: Optional[str] = None
+    hint: Optional[str] = None

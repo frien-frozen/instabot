@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import Settings
 from app.schemas import CommentCreate
 from app.services.comment_repository import CommentRepository
-from app.services.gemini_service import GeminiService
+from app.services.gemini_service import GeminiAPIError, GeminiService
 from app.services.instagram_service import InstagramAPIError, InstagramService
 from app.utils.logging import get_logger, log_duration, log_event
 from app.utils.spam import is_spam
@@ -174,6 +174,28 @@ class CommentProcessor:
                     await self._instagram.reply_comment(data.comment_id, reply_text)
                     await repo.mark_replied(data.comment_id, reply_text)
                     await session.commit()
+
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "comment_reply_success",
+                        comment_id=data.comment_id,
+                        username=data.username,
+                        reply_text=reply_text,
+                        media_id=data.media_id,
+                    )
+
+                except GeminiAPIError as exc:
+                    await session.rollback()
+                    log_event(
+                        logger,
+                        logging.ERROR,
+                        "gemini_reply_failed",
+                        comment_id=data.comment_id,
+                        model=exc.model,
+                        error=str(exc),
+                        hint="Set GEMINI_MODEL=gemini-2.5-flash in Render environment variables",
+                    )
 
                 except InstagramAPIError as exc:
                     await session.rollback()

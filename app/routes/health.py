@@ -6,8 +6,19 @@ from fastapi import APIRouter, Depends
 from starlette.responses import Response
 
 from app.config import Settings, get_settings
-from app.dependencies import get_instagram_service
-from app.schemas import HealthResponse, InstagramHealthResponse, MessagesHealthResponse
+from app.dependencies import get_gemini_service, get_instagram_service
+from app.schemas import (
+    GeminiHealthResponse,
+    HealthResponse,
+    InstagramHealthResponse,
+    MessagesHealthResponse,
+)
+from app.services.gemini_service import (
+    DEFAULT_GEMINI_MODEL,
+    RECOMMENDED_GEMINI_MODELS,
+    GeminiAPIError,
+    GeminiService,
+)
 from app.services.instagram_service import InstagramAPIError, InstagramService
 
 router = APIRouter(tags=["health"])
@@ -83,6 +94,39 @@ async def messages_health_check(
         )
 
 
+@router.get("/health/gemini", response_model=GeminiHealthResponse)
+async def gemini_health_check(
+    settings: Settings = Depends(get_settings),
+    gemini: GeminiService = Depends(get_gemini_service),
+) -> GeminiHealthResponse:
+    """Verify GEMINI_API_KEY and GEMINI_MODEL with a live test prompt."""
+    recommended = sorted(RECOMMENDED_GEMINI_MODELS)
+    try:
+        test_reply = await gemini.validate_model()
+        return GeminiHealthResponse(
+            status="ok",
+            model=gemini.model,
+            test_reply=test_reply,
+            recommended_models=recommended,
+            hint=(
+                f"Using {gemini.model}"
+                + (
+                    f" (auto-corrected from {gemini.configured_model!r})"
+                    if gemini.configured_model != gemini.model
+                    else ""
+                )
+            ),
+        )
+    except GeminiAPIError as exc:
+        return GeminiHealthResponse(
+            status="error",
+            model=gemini.model,
+            recommended_models=recommended,
+            error=str(exc),
+            hint="Set GEMINI_MODEL=gemini-2.5-flash in Render environment variables",
+        )
+
+
 @router.get("/")
 async def root() -> dict[str, str]:
     """Root endpoint with basic service info."""
@@ -93,6 +137,7 @@ async def root() -> dict[str, str]:
         "health": "/health",
         "health_instagram": "/health/instagram",
         "health_messages": "/health/messages",
+        "health_gemini": "/health/gemini",
         "docs": "/docs",
     }
 

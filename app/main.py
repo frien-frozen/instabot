@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.database import close_db, get_engine, run_alembic_migrations
 from app.middleware import RequestLoggingMiddleware
 from app.routes import health_router, webhook_router
+from app.services.gemini_service import GeminiAPIError, GeminiService
 from app.services.instagram_service import InstagramAPIError, InstagramService
 from app.utils.logging import get_logger, log_event, setup_logging
 
@@ -52,6 +53,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             error_code=exc.error_code,
             error_detail=str(exc),
             hint="Regenerate token in Meta dashboard → Generate token, then update META_ACCESS_TOKEN on Render",
+        )
+
+    try:
+        gemini = GeminiService(settings)
+        test_reply = await gemini.validate_model()
+        log_event(
+            logger,
+            logging.INFO,
+            "gemini_model_valid",
+            model=gemini.model,
+            configured_model=gemini.configured_model,
+            test_reply=test_reply,
+        )
+    except GeminiAPIError as exc:
+        log_event(
+            logger,
+            logging.ERROR,
+            "gemini_model_invalid",
+            model=exc.model,
+            error=str(exc),
+            hint="Set GEMINI_MODEL=gemini-2.5-flash in Render environment variables",
         )
 
     yield

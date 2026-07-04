@@ -42,9 +42,9 @@ class Settings(BaseSettings):
     # Database
     database_url: str = Field(..., alias="DATABASE_URL")
 
-    # Reply behavior
-    reply_delay_min_seconds: int = Field(default=10, alias="REPLY_DELAY_MIN_SECONDS")
-    reply_delay_max_seconds: int = Field(default=90, alias="REPLY_DELAY_MAX_SECONDS")
+    # Reply behavior (comments only — DMs reply immediately)
+    reply_delay_min_seconds: int = Field(default=3, alias="REPLY_DELAY_MIN_SECONDS")
+    reply_delay_max_seconds: int = Field(default=15, alias="REPLY_DELAY_MAX_SECONDS")
 
     # HTTP client
     http_timeout_seconds: int = Field(default=30, alias="HTTP_TIMEOUT_SECONDS")

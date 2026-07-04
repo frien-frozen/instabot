@@ -154,6 +154,9 @@ def _message_from_payload(
         return None
 
     is_echo = bool(message.get("is_echo"))
+    if is_echo:
+        return None
+
     text = message.get("text")
     if not text or not str(text).strip():
         return None
