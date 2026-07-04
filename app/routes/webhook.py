@@ -51,6 +51,41 @@ async def verify_webhook(
     )
 
 
+def _normalize_webhook_body(body: dict[str, Any], settings: Settings) -> dict[str, Any]:
+    """
+    Normalize Meta webhook payloads into the standard envelope.
+
+    Meta's dashboard "Send to My Server" test sends a bare change object:
+      {"field": "comments", "value": {...}}
+
+    Live deliveries use the full envelope:
+      {"object": "instagram", "entry": [{"changes": [...]}]}
+    """
+    if "object" in body and "entry" in body:
+        return body
+
+    if "field" in body and "value" in body:
+        account_id = settings.instagram_account_id or "unknown"
+        log_event(
+            logger,
+            logging.INFO,
+            "webhook_payload_normalized",
+            field=body.get("field"),
+            account_id=account_id,
+        )
+        return {
+            "object": "instagram",
+            "entry": [
+                {
+                    "id": account_id,
+                    "changes": [body],
+                }
+            ],
+        }
+
+    return body
+
+
 def _extract_comments(payload: InstagramWebhookPayload) -> list[CommentCreate]:
     """Parse webhook payload and extract comment records."""
     comments: list[CommentCreate] = []
@@ -101,8 +136,9 @@ def _extract_comments(payload: InstagramWebhookPayload) -> list[CommentCreate]:
 async def receive_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
+    settings: Settings = Depends(get_settings),
     processor: CommentProcessor = Depends(get_comment_processor),
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """
     Receive Instagram webhook events (POST).
 
@@ -110,49 +146,48 @@ async def receive_webhook(
     to meet Meta's 20-second response requirement.
     """
     raw_body = await request.body()
+    headers = dict(request.headers)
+    client_ip = request.client.host if request.client else "unknown"
+    forwarded_for = headers.get("x-forwarded-for", "")
+
+    # Temporary debug logging — remove once Meta delivery is confirmed
+    logger.info("RAW BODY: %r", raw_body)
+    logger.info("HEADERS: %s", headers)
+    log_event(
+        logger,
+        logging.INFO,
+        "webhook_post_received",
+        client_ip=client_ip,
+        forwarded_for=forwarded_for,
+        content_length=len(raw_body),
+        user_agent=headers.get("user-agent", ""),
+    )
+
     if not raw_body:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Empty webhook payload",
-        )
+        logger.warning("Empty webhook payload from %s", client_ip)
+        return {"ok": False, "error": "empty_payload"}
 
     try:
         body: dict[str, Any] = json.loads(raw_body)
-    except json.JSONDecodeError as exc:
-        log_event(
-            logger,
-            logging.ERROR,
-            "webhook_parse_error",
-            error=str(exc),
-            raw_body=raw_body.decode("utf-8", errors="replace")[:2000],
-            headers=dict(request.headers),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid JSON payload",
-        ) from exc
+    except json.JSONDecodeError:
+        logger.exception("JSON parse failed")
+        return {"ok": False, "error": "invalid_json"}
 
     if not isinstance(body, dict):
-        log_event(
-            logger,
-            logging.ERROR,
-            "webhook_parse_error",
-            error="Payload must be a JSON object",
-            raw_body=raw_body.decode("utf-8", errors="replace")[:2000],
-            headers=dict(request.headers),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid JSON payload",
-        )
+        logger.exception("JSON parse failed: payload is not an object")
+        return {"ok": False, "error": "invalid_json"}
 
     log_event(
         logger,
         logging.INFO,
         "webhook_received",
+        client_ip=client_ip,
         object_type=body.get("object"),
         entry_count=len(body.get("entry", [])),
+        raw_keys=list(body.keys()),
     )
+
+    body = _normalize_webhook_body(body, settings)
 
     try:
         payload = InstagramWebhookPayload.model_validate(body)
