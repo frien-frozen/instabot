@@ -1,5 +1,7 @@
 """Google Gemini AI reply generation service."""
 
+from __future__ import annotations
+
 import logging
 
 from google import genai

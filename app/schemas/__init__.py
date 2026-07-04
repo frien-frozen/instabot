@@ -1,6 +1,9 @@
 """Pydantic v2 schemas for request/response validation."""
 
+from __future__ import annotations
+
 from datetime import datetime
+from typing import Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -18,26 +21,26 @@ class WebhookVerificationParams(BaseModel):
 class InstagramUser(BaseModel):
     """Instagram user embedded in webhook payloads."""
 
-    id: str | None = None
-    username: str | None = None
+    id: Optional[str] = None
+    username: Optional[str] = None
 
 
 class InstagramMedia(BaseModel):
     """Media reference embedded in comment webhook payloads."""
 
-    id: str | None = None
-    media_product_type: str | None = None
+    id: Optional[str] = None
+    media_product_type: Optional[str] = None
 
 
 class InstagramCommentValue(BaseModel):
     """Comment data from an Instagram webhook change event."""
 
     id: str
-    text: str | None = None
-    from_user: InstagramUser | None = Field(default=None, alias="from")
-    media: InstagramMedia | None = None
-    parent_id: str | None = None
-    timestamp: int | None = None
+    text: Optional[str] = None
+    from_user: Optional[InstagramUser] = Field(default=None, alias="from")
+    media: Optional[InstagramMedia] = None
+    parent_id: Optional[str] = None
+    timestamp: Optional[int] = None
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -46,23 +49,23 @@ class InstagramChange(BaseModel):
     """Single change object within a webhook entry."""
 
     field: str
-    value: dict | InstagramCommentValue
+    value: Union[dict, InstagramCommentValue]
 
 
 class InstagramEntry(BaseModel):
     """Webhook entry containing one or more change events."""
 
     id: str
-    time: int | None = None
-    changes: list[InstagramChange] | None = None
-    messaging: list[dict] | None = None
+    time: Optional[int] = None
+    changes: Optional[List[InstagramChange]] = None
+    messaging: Optional[List[dict]] = None
 
 
 class InstagramWebhookPayload(BaseModel):
     """Top-level Instagram webhook POST body."""
 
     object: str
-    entry: list[InstagramEntry] = Field(default_factory=list)
+    entry: List[InstagramEntry] = Field(default_factory=list)
 
 
 class CommentCreate(BaseModel):
@@ -72,8 +75,8 @@ class CommentCreate(BaseModel):
     username: str
     message: str
     media_id: str
-    parent_comment_id: str | None = None
-    account_id: str | None = None
+    parent_comment_id: Optional[str] = None
+    account_id: Optional[str] = None
 
 
 class CommentResponse(BaseModel):
@@ -84,11 +87,11 @@ class CommentResponse(BaseModel):
     username: str
     message: str
     media_id: str
-    parent_comment_id: str | None
+    parent_comment_id: Optional[str]
     replied: bool
-    reply_text: str | None
+    reply_text: Optional[str]
     created_at: datetime
-    replied_at: datetime | None
+    replied_at: Optional[datetime]
 
     model_config = ConfigDict(from_attributes=True)
 

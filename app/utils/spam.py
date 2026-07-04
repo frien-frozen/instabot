@@ -1,5 +1,7 @@
 """Spam detection heuristics for incoming Instagram comments."""
 
+from __future__ import annotations
+
 import re
 import unicodedata
 

@@ -1,7 +1,9 @@
 """Comment persistence and duplicate-protection repository."""
 
+from __future__ import annotations
+
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -81,7 +83,7 @@ class CommentRepository:
 
         comment.replied = True
         comment.reply_text = reply_text
-        comment.replied_at = datetime.now(UTC)
+        comment.replied_at = datetime.now(timezone.utc)
         await self._session.flush()
 
         log_event(

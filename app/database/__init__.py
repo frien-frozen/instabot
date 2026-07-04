@@ -1,5 +1,7 @@
 """Database engine and session management."""
 
+from __future__ import annotations
+
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
