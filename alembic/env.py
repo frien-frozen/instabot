@@ -10,11 +10,8 @@ from app.database import Base
 from app.models import (  # noqa: F401
     Comment,
     Conversation,
-    ConversationLog,
-    InstagramAccount,
-    Knowledge,
     Message,
-    ProcessedEvent,
+    ProcessedWebhook,
     Setting,
 )
 

@@ -7,13 +7,11 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI
 
 from app.config import get_settings
-from app.database import close_db, get_engine, get_session_factory, run_alembic_migrations
-from app.dependencies import get_account_service, get_config_sync_service
+from app.database import close_db, get_engine, run_alembic_migrations
 from app.middleware import RequestLoggingMiddleware
-from app.routes import agent_router, api_router, health_router, webhook_router
+from app.routes import health_router, webhook_router
 from app.services.gemini_service import GeminiAPIError, GeminiService
 from app.services.instagram_service import InstagramAPIError, InstagramService
-from app.utils.agent_logging import agent_log
 from app.utils.logging import get_logger, log_event, setup_logging
 
 logger = get_logger(__name__)
@@ -34,20 +32,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     get_engine(settings)
 
-    account_service = get_account_service()
-    await account_service.bootstrap_default_account()
-
-    config_sync = get_config_sync_service()
-    synced = await config_sync.sync_once()
-    agent_log(
-        logger,
-        "SYNC",
-        logging.INFO,
-        "initial configuration sync completed",
-        profile_count=synced,
-        interval_seconds=settings.agent_config_sync_interval_seconds,
-    )
-    config_sync.start()
+    # Validate Instagram token at startup — surfaces code 190 immediately in logs
+    try:
+        ig = InstagramService(settings)
+        profile = await ig.validate_token()
+        log_event(
+            logger,
+            logging.INFO,
+            "instagram_token_valid",
+            graph_host=settings.meta_graph_host,
+            user_id=profile.get("user_id") or profile.get("id"),
+            username=profile.get("username"),
+        )
+    except InstagramAPIError as exc:
+        log_event(
+            logger,
+            logging.ERROR,
+            "instagram_token_invalid",
+            graph_host=settings.meta_graph_host,
+            error_code=exc.error_code,
+            error_detail=str(exc),
+            hint="Regenerate token in Meta dashboard → Generate token, then update META_ACCESS_TOKEN on Render",
+        )
 
     try:
         gemini = GeminiService(settings)
@@ -72,7 +78,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     yield
 
-    await config_sync.stop()
     await close_db()
 
 
@@ -91,8 +96,6 @@ def create_app() -> FastAPI:
 
     app.add_middleware(RequestLoggingMiddleware)
     app.include_router(health_router)
-    app.include_router(api_router)
-    app.include_router(agent_router)
     app.include_router(webhook_router)
 
     return app

@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Central configuration for Cloud Run and local development."""
+    """Central configuration for a single Instagram account."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -28,53 +28,45 @@ class Settings(BaseSettings):
     meta_access_token: str = Field(..., alias="META_ACCESS_TOKEN")
     meta_api_version: str = Field(default="v21.0", alias="META_API_VERSION")
     instagram_account_id: str = Field(default="", alias="INSTAGRAM_ACCOUNT_ID")
-    # Alias for instagram_account_id
     instagram_user_id: str = Field(default="", alias="INSTAGRAM_USER_ID")
-    # Use graph.instagram.com for Instagram Business Login tokens (IGAA...)
-    # Use graph.facebook.com for Facebook Page-linked Instagram tokens
     meta_graph_host: str = Field(default="graph.instagram.com", alias="META_GRAPH_HOST")
     meta_app_secret: str = Field(default="", alias="META_APP_SECRET")
 
     # Google Gemini
     gemini_api_key: str = Field(..., alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
+    system_prompt: str = Field(default="", alias="SYSTEM_PROMPT")
 
     # Database
     database_url: str = Field(..., alias="DATABASE_URL")
 
-    # Reply behavior (comments only — DMs reply immediately)
+    # Reply behavior
     reply_delay_min_seconds: int = Field(default=3, alias="REPLY_DELAY_MIN_SECONDS")
     reply_delay_max_seconds: int = Field(default=15, alias="REPLY_DELAY_MAX_SECONDS")
+    comments_enabled: bool = Field(default=True, alias="COMMENTS_ENABLED")
+    messages_enabled: bool = Field(default=True, alias="MESSAGES_ENABLED")
+    mentions_enabled: bool = Field(default=True, alias="MENTIONS_ENABLED")
+    story_mentions_enabled: bool = Field(default=True, alias="STORY_MENTIONS_ENABLED")
 
     # HTTP client
     http_timeout_seconds: int = Field(default=30, alias="HTTP_TIMEOUT_SECONDS")
     http_max_retries: int = Field(default=3, alias="HTTP_MAX_RETRIES")
 
-    # Dashboard / agent sync
-    dashboard_api_base_url: str = Field(default="", alias="DASHBOARD_API_BASE_URL")
-    dashboard_api_key: str = Field(default="", alias="DASHBOARD_API_KEY")
-    agent_api_key: str = Field(default="", alias="AGENT_API_KEY")
-    agent_config_sync_interval_seconds: int = Field(default=30, alias="AGENT_CONFIG_SYNC_INTERVAL_SECONDS")
-
-    @property
-    def resolved_dashboard_api_key(self) -> str:
-        """API key used to authenticate against the dashboard agent endpoints."""
-        return self.dashboard_api_key or self.agent_api_key
-
     @property
     def meta_graph_base_url(self) -> str:
-        """Base URL for the Instagram / Meta Graph API."""
         return f"https://{self.meta_graph_host}/{self.meta_api_version}"
 
     @property
     def is_production(self) -> bool:
-        """Whether the app is running in production mode."""
         return self.app_env.lower() == "production"
 
     @property
     def resolved_instagram_user_id(self) -> str:
-        """Authenticated Instagram user ID from env (INSTAGRAM_USER_ID or INSTAGRAM_ACCOUNT_ID)."""
         return self.instagram_user_id or self.instagram_account_id
+
+    @property
+    def resolved_system_prompt(self) -> str:
+        return self.system_prompt.strip()
 
 
 @lru_cache

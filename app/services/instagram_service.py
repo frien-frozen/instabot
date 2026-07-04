@@ -57,26 +57,6 @@ class InstagramService:
         self._cached_user_id: str | None = None
         self._cached_username: str | None = None
 
-    @classmethod
-    def for_account(cls, settings: Settings, account: Any) -> InstagramService:
-        """Build an API client scoped to a database InstagramAccount row."""
-        svc = cls(settings)
-        svc._access_token = account.access_token.strip()
-        svc._base_url = account.graph_base_url
-        svc._cached_user_id = account.instagram_user_id
-        svc._cached_username = account.username
-        return svc
-
-    @classmethod
-    def for_profile(cls, settings: Settings, profile: Any) -> InstagramService:
-        """Build an API client scoped to a dashboard-synced profile."""
-        svc = cls(settings)
-        svc._access_token = profile.access_token.strip()
-        svc._base_url = profile.graph_base_url
-        svc._cached_user_id = profile.instagram_id
-        svc._cached_username = profile.username
-        return svc
-
     def _build_url(self, path: str) -> str:
         """Build a full Graph API URL."""
         return f"{self._base_url}/{path.lstrip('/')}"
@@ -209,7 +189,7 @@ class InstagramService:
             return self._cached_user_id
 
         configured = self._settings.resolved_instagram_user_id
-        if configured and not self._cached_user_id:
+        if configured:
             self._cached_user_id = configured
             return configured
 
@@ -318,14 +298,6 @@ class InstagramService:
             "GET",
             "me",
             params={"fields": "user_id,username,name"},
-        )
-
-    async def fetch_account_profile(self) -> dict[str, Any]:
-        """Fetch authenticated Instagram profile for dashboard import."""
-        return await self._request(
-            "GET",
-            "me",
-            params={"fields": "user_id,username,name,profile_picture_url"},
         )
 
     async def reply_comment(

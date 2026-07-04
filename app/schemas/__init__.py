@@ -92,6 +92,19 @@ class MessageCreate(BaseModel):
     is_echo: bool = False
 
 
+class MentionCreate(BaseModel):
+    """Internal schema for an incoming Instagram mention."""
+
+    mention_id: str
+    mention_type: str
+    username: str = "unknown"
+    text: str = ""
+    comment_id: Optional[str] = None
+    from_id: Optional[str] = None
+    media_id: Optional[str] = None
+    account_id: Optional[str] = None
+
+
 class CommentResponse(BaseModel):
     """API response schema for a stored comment."""
 
@@ -149,53 +162,3 @@ class GeminiHealthResponse(BaseModel):
     recommended_models: List[str] = Field(default_factory=list)
     error: Optional[str] = None
     hint: Optional[str] = None
-
-
-class ImportExistingAccountResponse(BaseModel):
-    """Dashboard import payload for an already-connected Instagram account."""
-
-    instagram_id: str
-    username: str
-    name: str = ""
-    profile_picture: str = ""
-    system_prompt: str
-    reply_comments: bool
-    reply_messages: bool
-    reply_mentions: bool
-    reply_story_mentions: bool
-    delay_min: int
-    delay_max: int
-    language_mode: str = "auto"
-    enabled: bool
-
-
-class AgentConfigResponse(BaseModel):
-    """Agent runtime configuration for one Instagram profile."""
-
-    account_id: int
-    instagram_id: str
-    username: str
-    system_prompt: str
-    reply_comments: bool
-    reply_messages: bool
-    reply_mentions: bool
-    reply_story_mentions: bool
-    commentReplyEnabled: bool
-    messageReplyEnabled: bool
-    mentionReplyEnabled: bool
-    storyMentionReplyEnabled: bool
-    delay_min: int
-    delay_max: int
-    language_mode: str = "auto"
-    enabled: bool
-    ai_provider: str = "gemini"
-    gemini_model: Optional[str] = None
-    graph_host: str = "graph.instagram.com"
-    api_version: str = "v21.0"
-    access_token: str
-
-
-class AgentConfigListResponse(BaseModel):
-    """All active agent profiles for periodic synchronization."""
-
-    profiles: List[AgentConfigResponse] = Field(default_factory=list)
