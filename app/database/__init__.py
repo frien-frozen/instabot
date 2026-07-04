@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from typing import Any
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -22,14 +24,43 @@ class Base(DeclarativeBase):
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 
+# libpq query params that asyncpg does not accept in the connection URL
+_ASYNCPG_UNSUPPORTED_QUERY_PARAMS = frozenset(
+    {"sslmode", "sslcert", "sslkey", "sslrootcert", "channel_binding"}
+)
 
-def _normalize_database_url(url: str) -> str:
-    """Convert sync PostgreSQL URLs to async-compatible form."""
+
+def _prepare_async_database_url(url: str) -> tuple[str, dict[str, Any]]:
+    """
+    Convert a PostgreSQL URL for asyncpg and extract SSL connect_args.
+
+    asyncpg does not support libpq-style sslmode in the URL query string.
+    Strip unsupported params and pass SSL settings via connect_args instead.
+    """
     if url.startswith("postgresql://"):
-        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    if url.startswith("postgres://"):
-        return url.replace("postgres://", "postgresql+asyncpg://", 1)
-    return url
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query, keep_blank_values=True)
+
+    connect_args: dict[str, Any] = {}
+    sslmode = query.pop("sslmode", [None])[0]
+    if sslmode in ("require", "verify-ca", "verify-full", "prefer"):
+        connect_args["ssl"] = True
+    elif sslmode == "disable":
+        connect_args["ssl"] = False
+
+    for param in _ASYNCPG_UNSUPPORTED_QUERY_PARAMS:
+        query.pop(param, None)
+
+    clean_query = urlencode(
+        [(key, values[-1]) for key, values in query.items()],
+        doseq=True,
+    )
+    clean_url = urlunparse(parsed._replace(query=clean_query))
+    return clean_url, connect_args
 
 
 def get_engine(settings: Settings | None = None) -> AsyncEngine:
@@ -37,8 +68,10 @@ def get_engine(settings: Settings | None = None) -> AsyncEngine:
     global _engine
     if _engine is None:
         cfg = settings or get_settings()
+        database_url, connect_args = _prepare_async_database_url(cfg.database_url)
         _engine = create_async_engine(
-            _normalize_database_url(cfg.database_url),
+            database_url,
+            connect_args=connect_args,
             echo=cfg.debug,
             pool_pre_ping=True,
             pool_size=5,

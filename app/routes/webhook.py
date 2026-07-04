@@ -1,5 +1,6 @@
 """Instagram Meta webhook routes."""
 
+import json
 import logging
 from typing import Any
 
@@ -108,14 +109,42 @@ async def receive_webhook(
     Acknowledges immediately and processes comments in the background
     to meet Meta's 20-second response requirement.
     """
+    raw_body = await request.body()
+    if not raw_body:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty webhook payload",
+        )
+
     try:
-        body: dict[str, Any] = await request.json()
-    except Exception as exc:
-        log_event(logger, logging.ERROR, "webhook_parse_error", error=str(exc))
+        body: dict[str, Any] = json.loads(raw_body)
+    except json.JSONDecodeError as exc:
+        log_event(
+            logger,
+            logging.ERROR,
+            "webhook_parse_error",
+            error=str(exc),
+            raw_body=raw_body.decode("utf-8", errors="replace")[:2000],
+            headers=dict(request.headers),
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid JSON payload",
         ) from exc
+
+    if not isinstance(body, dict):
+        log_event(
+            logger,
+            logging.ERROR,
+            "webhook_parse_error",
+            error="Payload must be a JSON object",
+            raw_body=raw_body.decode("utf-8", errors="replace")[:2000],
+            headers=dict(request.headers),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON payload",
+        )
 
     log_event(
         logger,
