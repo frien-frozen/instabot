@@ -6,7 +6,9 @@ from fastapi import APIRouter, Depends
 from starlette.responses import Response
 
 from app.config import Settings, get_settings
-from app.schemas import HealthResponse
+from app.dependencies import get_instagram_service
+from app.schemas import HealthResponse, InstagramHealthResponse
+from app.services.instagram_service import InstagramAPIError, InstagramService
 
 router = APIRouter(tags=["health"])
 
@@ -24,6 +26,28 @@ async def health_check(settings: Settings = Depends(get_settings)) -> HealthResp
 @router.head("/health", include_in_schema=False)
 async def health_check_head() -> Response:
     return Response(status_code=200)
+
+
+@router.get("/health/instagram", response_model=InstagramHealthResponse)
+async def instagram_health_check(
+    settings: Settings = Depends(get_settings),
+    instagram: InstagramService = Depends(get_instagram_service),
+) -> InstagramHealthResponse:
+    """Verify META_ACCESS_TOKEN against the Instagram Graph API."""
+    try:
+        profile = await instagram.validate_token()
+        return InstagramHealthResponse(
+            status="ok",
+            graph_host=settings.meta_graph_host,
+            username=profile.get("username"),
+            user_id=str(profile.get("user_id") or profile.get("id") or ""),
+        )
+    except InstagramAPIError as exc:
+        return InstagramHealthResponse(
+            status="error",
+            graph_host=settings.meta_graph_host,
+            error=str(exc),
+        )
 
 
 @router.get("/")

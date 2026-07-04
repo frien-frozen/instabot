@@ -14,6 +14,14 @@ from app.utils.logging import get_logger, log_event
 logger = get_logger(__name__)
 
 
+def _redact_url(url: str) -> str:
+    """Remove access tokens from logged URLs."""
+    if "access_token=" not in url:
+        return url
+    base, _, _ = url.partition("access_token=")
+    return f"{base}access_token=***REDACTED***"
+
+
 class InstagramAPIError(Exception):
     """Raised when the Instagram Graph API returns an error."""
 
@@ -44,7 +52,7 @@ class InstagramService:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._base_url = settings.meta_graph_base_url
-        self._access_token = settings.meta_access_token
+        self._access_token = settings.meta_access_token.strip()
         self._timeout = settings.http_timeout_seconds
         self._max_retries = settings.http_max_retries
 
@@ -63,7 +71,7 @@ class InstagramService:
             logging.INFO,
             "instagram_api_response",
             status_code=response.status_code,
-            url=str(response.url),
+            url=_redact_url(str(response.url)),
             body=response.text[:2000],
         )
 
@@ -174,6 +182,18 @@ class InstagramService:
             f"Request failed after {self._max_retries} attempts: {last_error}"
         )
 
+    async def validate_token(self) -> dict[str, Any]:
+        """
+        Verify the access token against the Instagram Graph API.
+
+        Logs account info on success; raises InstagramAPIError on failure.
+        """
+        return await self._request(
+            "GET",
+            "me",
+            params={"fields": "user_id,username,name"},
+        )
+
     async def reply_comment(
         self,
         comment_id: str,
@@ -182,7 +202,7 @@ class InstagramService:
         """
         Post a reply to an Instagram comment.
 
-        Uses POST /{comment-id}/replies endpoint.
+        Uses POST /{comment-id}/replies?message=... per Instagram Graph API.
         """
         log_event(
             logger,
@@ -194,7 +214,7 @@ class InstagramService:
         result = await self._request(
             "POST",
             f"{comment_id}/replies",
-            json_body={"message": message},
+            params={"message": message},
         )
         log_event(
             logger,

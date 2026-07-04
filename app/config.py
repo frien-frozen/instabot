@@ -28,10 +28,14 @@ class Settings(BaseSettings):
     meta_access_token: str = Field(..., alias="META_ACCESS_TOKEN")
     meta_api_version: str = Field(default="v21.0", alias="META_API_VERSION")
     instagram_account_id: str = Field(default="", alias="INSTAGRAM_ACCOUNT_ID")
+    # Use graph.instagram.com for Instagram Business Login tokens (IGAA...)
+    # Use graph.facebook.com for Facebook Page-linked Instagram tokens
+    meta_graph_host: str = Field(default="graph.instagram.com", alias="META_GRAPH_HOST")
+    meta_app_secret: str = Field(default="", alias="META_APP_SECRET")
 
     # Google Gemini
     gemini_api_key: str = Field(..., alias="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-2.0-flash", alias="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
 
     # Database
     database_url: str = Field(..., alias="DATABASE_URL")
@@ -46,8 +50,8 @@ class Settings(BaseSettings):
 
     @property
     def meta_graph_base_url(self) -> str:
-        """Base URL for the Meta Graph API."""
-        return f"https://graph.facebook.com/{self.meta_api_version}"
+        """Base URL for the Instagram / Meta Graph API."""
+        return f"https://{self.meta_graph_host}/{self.meta_api_version}"
 
     @property
     def is_production(self) -> bool:

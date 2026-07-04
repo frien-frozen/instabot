@@ -102,3 +102,13 @@ class HealthResponse(BaseModel):
     status: str
     app_name: str
     environment: str
+
+
+class InstagramHealthResponse(BaseModel):
+    """Instagram token validation status."""
+
+    status: str
+    graph_host: str
+    username: Optional[str] = None
+    user_id: Optional[str] = None
+    error: Optional[str] = None

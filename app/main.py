@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import logging
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
@@ -9,7 +10,10 @@ from app.config import get_settings
 from app.database import close_db, get_engine
 from app.middleware import RequestLoggingMiddleware
 from app.routes import health_router, webhook_router
-from app.utils.logging import setup_logging
+from app.services.instagram_service import InstagramAPIError, InstagramService
+from app.utils.logging import get_logger, log_event, setup_logging
+
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -18,8 +22,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     setup_logging(settings)
 
-    # Warm up the database connection pool
     get_engine(settings)
+
+    # Validate Instagram token at startup — surfaces code 190 immediately in logs
+    try:
+        ig = InstagramService(settings)
+        profile = await ig.validate_token()
+        log_event(
+            logger,
+            logging.INFO,
+            "instagram_token_valid",
+            graph_host=settings.meta_graph_host,
+            user_id=profile.get("user_id") or profile.get("id"),
+            username=profile.get("username"),
+        )
+    except InstagramAPIError as exc:
+        log_event(
+            logger,
+            logging.ERROR,
+            "instagram_token_invalid",
+            graph_host=settings.meta_graph_host,
+            error_code=exc.error_code,
+            error_detail=str(exc),
+            hint="Regenerate token in Meta dashboard → Generate token, then update META_ACCESS_TOKEN on Render",
+        )
 
     yield
 

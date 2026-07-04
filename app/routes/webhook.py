@@ -208,6 +208,22 @@ async def receive_webhook(
     comments = _extract_comments(payload)
 
     if not comments:
+        # Log non-comment webhooks so they're visible in production debugging
+        entry = body.get("entry", [{}])[0] if body.get("entry") else {}
+        event_types: list[str] = []
+        if entry.get("messaging"):
+            event_types.append("messaging")
+        if entry.get("changes"):
+            fields = [c.get("field") for c in entry.get("changes", []) if isinstance(c, dict)]
+            event_types.extend(fields)
+        log_event(
+            logger,
+            logging.INFO,
+            "webhook_no_comments",
+            client_ip=client_ip,
+            account_id=entry.get("id"),
+            event_types=event_types or ["unknown"],
+        )
         return {"status": "ok", "processed": "0"}
 
     for comment_data in comments:
