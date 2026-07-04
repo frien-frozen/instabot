@@ -167,3 +167,35 @@ class ImportExistingAccountResponse(BaseModel):
     delay_max: int
     language_mode: str = "auto"
     enabled: bool
+
+
+class AgentConfigResponse(BaseModel):
+    """Agent runtime configuration for one Instagram profile."""
+
+    account_id: int
+    instagram_id: str
+    username: str
+    system_prompt: str
+    reply_comments: bool
+    reply_messages: bool
+    reply_mentions: bool
+    reply_story_mentions: bool
+    commentReplyEnabled: bool
+    messageReplyEnabled: bool
+    mentionReplyEnabled: bool
+    storyMentionReplyEnabled: bool
+    delay_min: int
+    delay_max: int
+    language_mode: str = "auto"
+    enabled: bool
+    ai_provider: str = "gemini"
+    gemini_model: Optional[str] = None
+    graph_host: str = "graph.instagram.com"
+    api_version: str = "v21.0"
+    access_token: str
+
+
+class AgentConfigListResponse(BaseModel):
+    """All active agent profiles for periodic synchronization."""
+
+    profiles: List[AgentConfigResponse] = Field(default_factory=list)

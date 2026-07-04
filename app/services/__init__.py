@@ -9,6 +9,7 @@ from app.services.conversation_service import ConversationService
 from app.services.event_dispatcher import EventDispatcher
 from app.services.gemini_service import (
     DEFAULT_GEMINI_MODEL,
+    DEFAULT_SYSTEM_PROMPT,
     GEMINI_FALLBACK_MODELS,
     GeminiAPIError,
     GeminiService,
@@ -31,6 +32,7 @@ __all__ = [
     "CommentService",
     "ConversationService",
     "DEFAULT_GEMINI_MODEL",
+    "DEFAULT_SYSTEM_PROMPT",
     "EventDispatcher",
     "GEMINI_FALLBACK_MODELS",
     "GeminiAPIError",

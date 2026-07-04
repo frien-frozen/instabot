@@ -50,6 +50,17 @@ class Settings(BaseSettings):
     http_timeout_seconds: int = Field(default=30, alias="HTTP_TIMEOUT_SECONDS")
     http_max_retries: int = Field(default=3, alias="HTTP_MAX_RETRIES")
 
+    # Dashboard / agent sync
+    dashboard_api_base_url: str = Field(default="", alias="DASHBOARD_API_BASE_URL")
+    dashboard_api_key: str = Field(default="", alias="DASHBOARD_API_KEY")
+    agent_api_key: str = Field(default="", alias="AGENT_API_KEY")
+    agent_config_sync_interval_seconds: int = Field(default=30, alias="AGENT_CONFIG_SYNC_INTERVAL_SECONDS")
+
+    @property
+    def resolved_dashboard_api_key(self) -> str:
+        """API key used to authenticate against the dashboard agent endpoints."""
+        return self.dashboard_api_key or self.agent_api_key
+
     @property
     def meta_graph_base_url(self) -> str:
         """Base URL for the Instagram / Meta Graph API."""

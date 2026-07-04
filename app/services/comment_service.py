@@ -1,4 +1,4 @@
-"""Comment reply automation — database-driven multi-account pipeline."""
+"""Comment reply automation driven by dashboard-synced profile configuration."""
 
 from __future__ import annotations
 
@@ -12,13 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import Settings
 from app.schemas import CommentCreate
 from app.schemas.events import CommentEvent
-from app.services.account_service import AccountService
 from app.services.ai_service import AIService
 from app.services.comment_repository import CommentRepository
 from app.services.conversation_service import ConversationService
 from app.services.gemini_service import GeminiAPIError
 from app.services.instagram_service import InstagramAPIError, InstagramService
-from app.utils.logging import get_logger, log_duration, log_event
+from app.services.profile_resolver import ProfileResolver
+from app.utils.agent_logging import agent_log
+from app.utils.logging import get_logger, log_duration
 from app.utils.spam import is_spam
 
 logger = get_logger(__name__)
@@ -31,13 +32,13 @@ class CommentService:
         self,
         settings: Settings,
         session_factory: async_sessionmaker[AsyncSession],
-        account_service: AccountService,
+        profile_resolver: ProfileResolver,
         ai_service: AIService,
         conversation_service: ConversationService,
     ) -> None:
         self._settings = settings
         self._session_factory = session_factory
-        self._accounts = account_service
+        self._profiles = profile_resolver
         self._ai = ai_service
         self._conversation = conversation_service
 
@@ -59,15 +60,41 @@ class CommentService:
     async def handle(self, event: CommentEvent) -> None:
         started = time.monotonic()
         with log_duration(logger, "comment_processing", comment_id=event.comment_id, username=event.username):
-            account = await self._accounts.resolve_account(event.account_external_id)
-            if account is None:
-                log_event(logger, logging.ERROR, "comment_account_not_found", account_id=event.account_external_id)
+            profile = await self._profiles.resolve(event.account_external_id)
+            if profile is None:
+                agent_log(
+                    logger,
+                    "ERROR",
+                    logging.ERROR,
+                    "comment rejected because profile was not found",
+                    instagram_id=event.account_external_id,
+                    comment_id=event.comment_id,
+                )
                 return
-            if not account.comments_enabled:
-                log_event(logger, logging.INFO, "comments_disabled", account_id=account.instagram_user_id)
+            if not profile.is_feature_enabled("comment"):
+                agent_log(
+                    logger,
+                    "COMMENT",
+                    logging.INFO,
+                    "comment reply disabled for profile",
+                    username=profile.username,
+                    instagram_id=profile.instagram_id,
+                    comment_id=event.comment_id,
+                )
                 return
 
-            instagram = InstagramService.for_account(self._settings, account)
+            instagram = InstagramService.for_profile(self._settings, profile)
+            agent_log(
+                logger,
+                "COMMENT",
+                logging.INFO,
+                "processing comment event",
+                username=profile.username,
+                instagram_id=profile.instagram_id,
+                comment_id=event.comment_id,
+                delay_min=profile.delay_min,
+                delay_max=profile.delay_max,
+            )
 
             text = event.text
             username = event.username
@@ -87,7 +114,7 @@ class CommentService:
                 async with self._session_factory() as session:
                     await self._conversation.log_event(
                         session,
-                        account_id=account.id,
+                        account_id=profile.account_id,
                         platform=event.platform,
                         event_type=event.event_type,
                         external_event_id=event.external_event_id,
@@ -98,22 +125,37 @@ class CommentService:
                         duration_ms=int((time.monotonic() - started) * 1000),
                     )
                     await session.commit()
+                agent_log(
+                    logger,
+                    "ERROR",
+                    logging.ERROR,
+                    "comment fetch failed",
+                    username=profile.username,
+                    comment_id=event.comment_id,
+                    error=str(exc),
+                )
                 return
 
             auth_id = await instagram.get_authenticated_user_id()
             if from_id and from_id == auth_id:
-                log_event(logger, logging.INFO, "ignoring_own_comment", comment_id=event.comment_id)
+                agent_log(
+                    logger,
+                    "COMMENT",
+                    logging.INFO,
+                    "ignoring own comment",
+                    username=profile.username,
+                    comment_id=event.comment_id,
+                )
                 return
 
             async with self._session_factory() as session:
                 if await self._conversation.is_processed(
                     session,
-                    account_id=account.id,
+                    account_id=profile.account_id,
                     platform=event.platform,
                     event_type=event.event_type,
                     external_event_id=event.external_event_id,
                 ):
-                    log_event(logger, logging.INFO, "duplicate_comment_skipped", comment_id=event.comment_id)
                     return
 
                 repo = CommentRepository(session)
@@ -133,12 +175,19 @@ class CommentService:
 
                 spam, reason = is_spam(text)
                 if spam:
-                    log_event(logger, logging.INFO, "spam_comment_ignored", comment_id=event.comment_id, reason=reason)
+                    agent_log(
+                        logger,
+                        "COMMENT",
+                        logging.INFO,
+                        "spam comment ignored",
+                        username=profile.username,
+                        comment_id=event.comment_id,
+                        reason=reason,
+                    )
                     await session.commit()
                     return
 
-                delay = random.randint(account.reply_delay_min, account.reply_delay_max)
-                log_event(logger, logging.INFO, "reply_delay_started", comment_id=event.comment_id, delay_seconds=delay)
+                delay = random.randint(profile.delay_min, profile.delay_max)
                 await session.commit()
 
             await asyncio.sleep(delay)
@@ -150,19 +199,19 @@ class CommentService:
                     return
 
                 try:
-                    reply_text = await self._ai.generate_reply(session, account, text)
+                    reply_text = await self._ai.generate_reply(session, profile, text)
                     result = await instagram.reply_comment(event.comment_id, reply_text)
                     await repo.mark_replied(event.comment_id, reply_text)
                     await self._conversation.mark_processed(
                         session,
-                        account_id=account.id,
+                        account_id=profile.account_id,
                         platform=event.platform,
                         event_type=event.event_type,
                         external_event_id=event.external_event_id,
                     )
                     await self._conversation.log_event(
                         session,
-                        account_id=account.id,
+                        account_id=profile.account_id,
                         platform=event.platform,
                         event_type=event.event_type,
                         external_event_id=event.external_event_id,
@@ -175,19 +224,20 @@ class CommentService:
                         duration_ms=int((time.monotonic() - started) * 1000),
                     )
                     await session.commit()
-                    log_event(
+                    agent_log(
                         logger,
+                        "COMMENT",
                         logging.INFO,
-                        "comment_reply_success",
+                        "comment reply sent",
+                        username=profile.username,
                         comment_id=event.comment_id,
-                        reply_text=reply_text,
                     )
                 except (GeminiAPIError, InstagramAPIError) as exc:
                     await session.rollback()
                     async with self._session_factory() as err_session:
                         await self._conversation.log_event(
                             err_session,
-                            account_id=account.id,
+                            account_id=profile.account_id,
                             platform=event.platform,
                             event_type=event.event_type,
                             external_event_id=event.external_event_id,
@@ -198,4 +248,12 @@ class CommentService:
                             duration_ms=int((time.monotonic() - started) * 1000),
                         )
                         await err_session.commit()
-                    log_event(logger, logging.ERROR, "comment_reply_failed", comment_id=event.comment_id, error=str(exc))
+                    agent_log(
+                        logger,
+                        "ERROR",
+                        logging.ERROR,
+                        "comment reply failed",
+                        username=profile.username,
+                        comment_id=event.comment_id,
+                        error=str(exc),
+                    )

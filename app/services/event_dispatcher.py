@@ -11,6 +11,7 @@ from app.schemas.events import BaseEvent, CommentEvent, MentionEvent, MessageEve
 from app.services.comment_service import CommentService
 from app.services.mention_service import MentionService
 from app.services.message_service import MessageService
+from app.services.profile_config_store import ProfileConfigStore
 from app.utils.logging import get_logger, log_event
 
 logger = get_logger(__name__)
@@ -30,15 +31,20 @@ class EventDispatcher:
         message_service: MessageService,
         mention_service: MentionService,
         instagram_adapter: InstagramAdapter | None = None,
+        profile_config_store: ProfileConfigStore | None = None,
     ) -> None:
         self._settings = settings
         self._comments = comment_service
         self._messages = message_service
         self._mentions = mention_service
         self._instagram = instagram_adapter or InstagramAdapter()
+        self._profile_store = profile_config_store
 
     def parse_events(self, body: dict[str, Any]) -> list[BaseEvent]:
-        return self._instagram.parse_webhook(body, self._settings)
+        known_profiles = None
+        if self._profile_store is not None:
+            known_profiles = self._profile_store.snapshot_by_instagram_id()
+        return self._instagram.parse_webhook(body, self._settings, known_profiles=known_profiles)
 
     async def dispatch(self, event: BaseEvent) -> None:
         log_event(

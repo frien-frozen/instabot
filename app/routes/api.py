@@ -11,7 +11,7 @@ from app.dependencies import get_account_service
 from app.models.instagram_account import InstagramAccount
 from app.schemas import ImportExistingAccountResponse
 from app.services.account_service import AccountService
-from app.services.gemini_service import SYSTEM_PROMPT
+from app.services.gemini_service import DEFAULT_SYSTEM_PROMPT
 from app.services.instagram_service import InstagramAPIError, InstagramService
 from app.utils.logging import get_logger, log_event
 
@@ -80,10 +80,10 @@ def _build_import_response(
             reply_comments=account.comments_enabled,
             reply_messages=account.messages_enabled,
             reply_mentions=account.mentions_enabled,
-            reply_story_mentions=account.mentions_enabled,
+            reply_story_mentions=account.story_mentions_enabled,
             delay_min=account.reply_delay_min,
             delay_max=account.reply_delay_max,
-            language_mode="auto",
+            language_mode=account.language_mode,
             enabled=account.is_active,
         )
 
@@ -92,7 +92,7 @@ def _build_import_response(
         username=username,
         name=name,
         profile_picture=profile_picture,
-        system_prompt=SYSTEM_PROMPT.strip(),
+        system_prompt=DEFAULT_SYSTEM_PROMPT,
         reply_comments=True,
         reply_messages=True,
         reply_mentions=True,
@@ -141,6 +141,13 @@ async def import_existing_account(
         raise _map_instagram_error(exc) from exc
 
     response = _build_import_response(profile, account, settings)
+
+    if account is not None and response.username:
+        await account_service.update_profile_metadata(
+            account.id,
+            username=response.username,
+            display_name=response.name or None,
+        )
 
     log_event(
         logger,

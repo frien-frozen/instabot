@@ -10,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from fastapi.responses import PlainTextResponse
 
 from app.config import Settings, get_settings
-from app.dependencies import get_event_dispatcher
+from app.dependencies import get_event_dispatcher, get_profile_config_store
 from app.services.event_dispatcher import EventDispatcher
 from app.utils.logging import get_logger, log_event
 from app.utils.webhook_logging import log_all_webhook_events
@@ -83,7 +83,8 @@ async def receive_webhook(
 
     from app.adapters.instagram import InstagramAdapter
 
-    body = InstagramAdapter().normalize_body(body, settings)
+    known_profiles = get_profile_config_store().snapshot_by_instagram_id()
+    body = InstagramAdapter().normalize_body(body, settings, known_profiles=known_profiles)
 
     if body.get("object") != "instagram":
         return {"status": "ignored", "reason": "unsupported_object"}

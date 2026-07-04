@@ -67,6 +67,16 @@ class InstagramService:
         svc._cached_username = account.username
         return svc
 
+    @classmethod
+    def for_profile(cls, settings: Settings, profile: Any) -> InstagramService:
+        """Build an API client scoped to a dashboard-synced profile."""
+        svc = cls(settings)
+        svc._access_token = profile.access_token.strip()
+        svc._base_url = profile.graph_base_url
+        svc._cached_user_id = profile.instagram_id
+        svc._cached_username = profile.username
+        return svc
+
     def _build_url(self, path: str) -> str:
         """Build a full Graph API URL."""
         return f"{self._base_url}/{path.lstrip('/')}"
@@ -199,7 +209,7 @@ class InstagramService:
             return self._cached_user_id
 
         configured = self._settings.resolved_instagram_user_id
-        if configured:
+        if configured and not self._cached_user_id:
             self._cached_user_id = configured
             return configured
 

@@ -139,6 +139,7 @@ async def root() -> dict[str, str]:
         "health_messages": "/health/messages",
         "health_gemini": "/health/gemini",
         "import_existing_account": "/api/import-existing-account",
+        "agent_config": "/api/agent/config/{username}",
         "docs": "/docs",
     }
 

@@ -1,6 +1,9 @@
 """FastAPI dependency injection providers."""
 
+from __future__ import annotations
+
 from functools import lru_cache
+from typing import Optional
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -12,6 +15,7 @@ from app.services.ai_service import AIService
 from app.services.comment_processor import CommentProcessor
 from app.services.comment_repository import CommentRepository
 from app.services.comment_service import CommentService
+from app.services.config_sync_service import ConfigSyncService
 from app.services.conversation_service import ConversationService
 from app.services.event_dispatcher import EventDispatcher
 from app.services.gemini_service import GeminiService
@@ -20,6 +24,15 @@ from app.services.knowledge_service import KnowledgeService
 from app.services.mention_service import MentionService
 from app.services.message_processor import MessageProcessor
 from app.services.message_service import MessageService
+from app.services.profile_config_store import ProfileConfigStore
+from app.services.profile_resolver import ProfileResolver
+
+_profile_config_store = ProfileConfigStore()
+_config_sync_service: Optional[ConfigSyncService] = None
+
+
+def get_profile_config_store() -> ProfileConfigStore:
+    return _profile_config_store
 
 
 @lru_cache
@@ -47,11 +60,14 @@ def get_account_service() -> AccountService:
     return AccountService(settings, get_session_factory(settings))
 
 
+def get_profile_resolver() -> ProfileResolver:
+    return ProfileResolver(get_profile_config_store(), get_account_service())
+
+
 def get_ai_service() -> AIService:
     settings = get_settings()
     return AIService(
         settings,
-        get_gemini_service(),
         get_knowledge_service(),
         get_conversation_service(),
     )
@@ -62,7 +78,7 @@ def get_comment_service() -> CommentService:
     return CommentService(
         settings,
         get_session_factory(settings),
-        get_account_service(),
+        get_profile_resolver(),
         get_ai_service(),
         get_conversation_service(),
     )
@@ -73,7 +89,7 @@ def get_message_service() -> MessageService:
     return MessageService(
         settings,
         get_session_factory(settings),
-        get_account_service(),
+        get_profile_resolver(),
         get_ai_service(),
         get_conversation_service(),
     )
@@ -84,7 +100,7 @@ def get_mention_service() -> MentionService:
     return MentionService(
         settings,
         get_session_factory(settings),
-        get_account_service(),
+        get_profile_resolver(),
         get_ai_service(),
         get_conversation_service(),
     )
@@ -97,6 +113,7 @@ def get_event_dispatcher() -> EventDispatcher:
         get_comment_service(),
         get_message_service(),
         get_mention_service(),
+        profile_config_store=get_profile_config_store(),
     )
 
 
@@ -106,6 +123,18 @@ def get_comment_processor() -> CommentProcessor:
 
 def get_message_processor() -> MessageProcessor:
     return MessageProcessor(get_message_service())
+
+
+def get_config_sync_service() -> ConfigSyncService:
+    global _config_sync_service
+    if _config_sync_service is None:
+        settings = get_settings()
+        _config_sync_service = ConfigSyncService(
+            settings,
+            get_profile_config_store(),
+            get_account_service(),
+        )
+    return _config_sync_service
 
 
 async def get_comment_repository(

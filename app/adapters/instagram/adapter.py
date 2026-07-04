@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.adapters.base import PlatformAdapter
 from app.config import Settings
 from app.schemas.events import BaseEvent, CommentEvent, MentionEvent, MessageEvent
 from app.utils.logging import get_logger, log_event
 import logging
+
+if TYPE_CHECKING:
+    from app.schemas.agent_config import AgentProfileConfig
 
 logger = get_logger(__name__)
 
@@ -30,20 +33,57 @@ def _parse_message_timestamp(raw: Any) -> int | None:
     return None
 
 
-def _resolve_account_id(entry_id: str, settings: Settings) -> str:
+def _resolve_account_id(
+    entry_id: str,
+    known_profiles: dict[str, AgentProfileConfig] | None = None,
+) -> str:
     if entry_id and entry_id not in ("0", "unknown"):
+        if known_profiles and entry_id in known_profiles:
+            return entry_id
+        if known_profiles:
+            for profile in known_profiles.values():
+                if profile.instagram_id == entry_id:
+                    return entry_id
         return entry_id
-    return settings.resolved_instagram_user_id or entry_id or "unknown"
+
+    if known_profiles and len(known_profiles) == 1:
+        profile = next(iter(known_profiles.values()))
+        log_event(
+            logger,
+            logging.WARNING,
+            "webhook_account_fallback_single_profile",
+            entry_id=entry_id,
+            instagram_id=profile.instagram_id,
+            username=profile.username,
+        )
+        return profile.instagram_id
+
+    if known_profiles and len(known_profiles) > 1:
+        log_event(
+            logger,
+            logging.ERROR,
+            "webhook_account_unresolved_multi_profile",
+            entry_id=entry_id,
+            known_instagram_ids=list(known_profiles.keys()),
+        )
+
+    return entry_id or "unknown"
 
 
 class InstagramAdapter(PlatformAdapter):
     platform = "instagram"
 
-    def normalize_body(self, body: dict[str, Any], settings: Settings) -> dict[str, Any]:
+    def normalize_body(
+        self,
+        body: dict[str, Any],
+        settings: Settings,
+        *,
+        known_profiles: dict[str, AgentProfileConfig] | None = None,
+    ) -> dict[str, Any]:
         if "object" in body and "entry" in body:
             return body
         if "field" in body and "value" in body:
-            account_id = settings.resolved_instagram_user_id or "unknown"
+            account_id = _resolve_account_id("", known_profiles)
             log_event(
                 logger,
                 logging.INFO,
@@ -54,8 +94,14 @@ class InstagramAdapter(PlatformAdapter):
             return {"object": "instagram", "entry": [{"id": account_id, "changes": [body]}]}
         return body
 
-    def parse_webhook(self, body: dict[str, Any], settings: Settings) -> list[BaseEvent]:
-        body = self.normalize_body(body, settings)
+    def parse_webhook(
+        self,
+        body: dict[str, Any],
+        settings: Settings,
+        *,
+        known_profiles: dict[str, AgentProfileConfig] | None = None,
+    ) -> list[BaseEvent]:
+        body = self.normalize_body(body, settings, known_profiles=known_profiles)
         if body.get("object") != "instagram":
             return []
 
@@ -63,7 +109,7 @@ class InstagramAdapter(PlatformAdapter):
         for entry in body.get("entry") or []:
             if not isinstance(entry, dict):
                 continue
-            account_id = _resolve_account_id(str(entry.get("id", "")), settings)
+            account_id = _resolve_account_id(str(entry.get("id", "")), known_profiles)
             events.extend(self._parse_messaging(entry, account_id))
             events.extend(self._parse_changes(entry, account_id))
         return events
