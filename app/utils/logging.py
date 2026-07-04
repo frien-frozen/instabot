@@ -50,14 +50,14 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
-def log_event(logger: logging.Logger, level: int, message: str, **fields: Any) -> None:
+def log_event(logger: logging.Logger, level: int, event: str, **fields: Any) -> None:
     """Emit a structured log entry with extra fields."""
     record = logger.makeRecord(
         logger.name,
         level,
         "(unknown file)",
         0,
-        message,
+        event,
         (),
         None,
     )
