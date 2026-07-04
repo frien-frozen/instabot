@@ -1,5 +1,7 @@
 """Instagram Meta webhook routes."""
 
+from __future__ import annotations
+
 import json
 import logging
 from typing import Any
@@ -109,7 +111,65 @@ def _extract_comments(body: dict[str, Any]) -> list[CommentCreate]:
     return comments
 
 
-def _extract_messages(body: dict[str, Any]) -> list[MessageCreate]:
+COMMENT_FIELDS = frozenset({"comments", "live_comments"})
+MESSAGE_FIELDS = frozenset({"messages", "messaging"})
+
+
+def _parse_message_timestamp(raw: Any) -> int | None:
+    """Normalize Instagram timestamps (seconds or milliseconds, str or int)."""
+    if raw is None:
+        return None
+    if isinstance(raw, str) and raw.isdigit():
+        raw = int(raw)
+    if isinstance(raw, (int, float)):
+        value = int(raw)
+        # Values below ~year 2286 in seconds are seconds; otherwise milliseconds
+        if value < 10_000_000_000:
+            return value * 1000
+        return value
+    return None
+
+
+def _resolve_account_id(entry_id: str, settings: Settings) -> str:
+    """Use configured Instagram account ID when webhook entry id is a placeholder."""
+    if entry_id and entry_id not in ("0", "unknown"):
+        return entry_id
+    return settings.resolved_instagram_user_id or entry_id or "unknown"
+
+
+def _message_from_payload(
+    *,
+    account_id: str,
+    sender: Any,
+    recipient: Any,
+    message: Any,
+    timestamp: Any,
+) -> MessageCreate | None:
+    """Build MessageCreate from a messaging event or messages change value."""
+    if not isinstance(message, dict):
+        return None
+
+    message_id = message.get("mid")
+    if not message_id or not isinstance(sender, dict):
+        return None
+
+    is_echo = bool(message.get("is_echo"))
+    text = message.get("text")
+    if not text or not str(text).strip():
+        return None
+
+    return MessageCreate(
+        message_id=str(message_id),
+        sender_id=str(sender.get("id", "")),
+        recipient_id=str(recipient.get("id", "")) if isinstance(recipient, dict) else "",
+        text=str(text),
+        timestamp=_parse_message_timestamp(timestamp),
+        account_id=account_id,
+        is_echo=is_echo,
+    )
+
+
+def _extract_messages(body: dict[str, Any], settings: Settings) -> list[MessageCreate]:
     """Extract incoming text DM events from a webhook body."""
     messages: list[MessageCreate] = []
 
@@ -119,45 +179,46 @@ def _extract_messages(body: dict[str, Any]) -> list[MessageCreate]:
     for entry in body.get("entry") or []:
         if not isinstance(entry, dict):
             continue
-        account_id = str(entry.get("id", ""))
+        account_id = _resolve_account_id(str(entry.get("id", "")), settings)
 
+        # Format A: entry.messaging[] (Messenger-style envelope)
         for event in entry.get("messaging") or []:
             if not isinstance(event, dict):
                 continue
 
-            # Skip delivery, read, and reaction events
             if event.get("read") or event.get("delivery") or event.get("reaction"):
                 continue
 
-            message = event.get("message")
-            if not isinstance(message, dict):
-                continue
-
-            is_echo = bool(message.get("is_echo"))
-
-            # Text-only for now — skip attachment-only messages
-            text = message.get("text")
-            if not text or not str(text).strip():
-                continue
-
-            message_id = message.get("mid")
-            sender = event.get("sender") or {}
-            recipient = event.get("recipient") or {}
-
-            if not message_id or not isinstance(sender, dict):
-                continue
-
-            messages.append(
-                MessageCreate(
-                    message_id=str(message_id),
-                    sender_id=str(sender.get("id", "")),
-                    recipient_id=str(recipient.get("id", "")) if isinstance(recipient, dict) else "",
-                    text=str(text),
-                    timestamp=event.get("timestamp"),
-                    account_id=account_id,
-                    is_echo=is_echo,
-                )
+            msg = _message_from_payload(
+                account_id=account_id,
+                sender=event.get("sender"),
+                recipient=event.get("recipient"),
+                message=event.get("message"),
+                timestamp=event.get("timestamp"),
             )
+            if msg is not None:
+                messages.append(msg)
+
+        # Format B: entry.changes[] with field=messages (Meta test + some IG payloads)
+        for change in entry.get("changes") or []:
+            if not isinstance(change, dict):
+                continue
+            if change.get("field") not in MESSAGE_FIELDS:
+                continue
+
+            value = change.get("value")
+            if not isinstance(value, dict):
+                continue
+
+            msg = _message_from_payload(
+                account_id=account_id,
+                sender=value.get("sender"),
+                recipient=value.get("recipient"),
+                message=value.get("message"),
+                timestamp=value.get("timestamp"),
+            )
+            if msg is not None:
+                messages.append(msg)
 
     return messages
 
@@ -211,7 +272,7 @@ async def receive_webhook(
         return {"status": "ignored", "reason": "unsupported_object"}
 
     comments = _extract_comments(body)
-    messages = _extract_messages(body)
+    messages = _extract_messages(body, settings)
 
     log_event(
         logger,

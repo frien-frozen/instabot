@@ -126,6 +126,30 @@ def _log_change_events(
         field = change.get("field")
         value = change.get("value") or {}
 
+        if field in ("messages", "messaging") and isinstance(value, dict):
+            sender = value.get("sender") or {}
+            recipient = value.get("recipient") or {}
+            message = value.get("message") or {}
+            log_event(
+                logger,
+                logging.INFO,
+                "webhook_message_change_event",
+                client_ip=client_ip,
+                entry_index=entry_index,
+                entry_id=entry_id,
+                change_index=change_index,
+                event_type=field,
+                field=field,
+                sender_id=sender.get("id") if isinstance(sender, dict) else sender,
+                recipient_id=recipient.get("id") if isinstance(recipient, dict) else recipient,
+                message_id=message.get("mid") if isinstance(message, dict) else None,
+                text=message.get("text") if isinstance(message, dict) else None,
+                is_echo=message.get("is_echo") if isinstance(message, dict) else None,
+                timestamp=value.get("timestamp"),
+                raw_change=change,
+            )
+            continue
+
         if not isinstance(value, dict):
             log_event(
                 logger,

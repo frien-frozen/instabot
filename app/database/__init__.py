@@ -107,6 +107,31 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
+def run_alembic_migrations() -> None:
+    """
+    Apply pending Alembic migrations synchronously.
+
+    Called at startup so tables exist even if the platform start command
+    skips start.sh. Safe to run on every boot (no-op when already at head).
+    """
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        capture_output=True,
+        text=True,
+    )
+    if result.stdout:
+        print(result.stdout, flush=True)
+    if result.stderr:
+        print(result.stderr, flush=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Alembic migration failed (exit {result.returncode}): {result.stderr or result.stdout}"
+        )
+
+
 async def init_db(settings: Settings | None = None) -> None:
     """Create all tables (used in development; prefer Alembic in production)."""
     engine = get_engine(settings)

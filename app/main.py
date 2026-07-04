@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI
 
 from app.config import get_settings
-from app.database import close_db, get_engine
+from app.database import close_db, get_engine, run_alembic_migrations
 from app.middleware import RequestLoggingMiddleware
 from app.routes import health_router, webhook_router
 from app.services.instagram_service import InstagramAPIError, InstagramService
@@ -21,6 +21,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Startup and shutdown lifecycle hooks."""
     settings = get_settings()
     setup_logging(settings)
+
+    try:
+        run_alembic_migrations()
+        log_event(logger, logging.INFO, "database_migrations_applied")
+    except RuntimeError as exc:
+        log_event(logger, logging.ERROR, "database_migration_failed", error=str(exc))
+        raise
 
     get_engine(settings)
 
