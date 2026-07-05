@@ -363,6 +363,51 @@ class InstagramService:
         )
         return result
 
+    async def fetch_user_profile(
+        self,
+        user_id: str,
+        *,
+        fallback_username: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Fetch public profile details for a commenter or DM sender.
+
+        Uses Instagram User Profile fields available after the user interacts
+        with your account (name, username, follower count, follow status).
+        """
+        fields = (
+            "name,username,profile_pic,follower_count,"
+            "is_user_follow_business,is_business_follow_user,is_verified_user"
+        )
+        try:
+            profile = await self._request(
+                "GET",
+                user_id,
+                params={"fields": fields},
+            )
+            log_event(
+                logger,
+                logging.INFO,
+                "user_profile_fetched",
+                user_id=user_id,
+                username=profile.get("username"),
+                name=profile.get("name"),
+            )
+            return profile
+        except InstagramAPIError as exc:
+            log_event(
+                logger,
+                logging.WARNING,
+                "user_profile_fetch_failed",
+                user_id=user_id,
+                error=str(exc),
+                status_code=exc.status_code,
+            )
+            return {
+                "id": user_id,
+                "username": fallback_username or "",
+            }
+
     async def get_media(self, media_id: str) -> dict[str, Any]:
         """Fetch metadata for an Instagram media object."""
         return await self._request(

@@ -303,11 +303,9 @@ def _extract_mentions(body: dict[str, Any], settings: Settings) -> list[MentionC
                 else value.get("media_id")
             )
 
-            comment_id = value.get("comment_id")
-            if not comment_id and field == "mentions":
-                raw_id = value.get("id")
-                if raw_id and str(raw_id) != str(media_id):
-                    comment_id = raw_id
+            comment_id = value.get("comment_id") or value.get("id") if field == "mentions" else value.get("comment_id")
+            if field == "mentions" and not comment_id:
+                comment_id = value.get("id")
 
             mention_id = comment_id or value.get("id") or media_id
             if not mention_id:

@@ -13,6 +13,7 @@ from app.services.instagram_service import InstagramAPIError, InstagramService
 from app.services.pending_reply_repository import PendingReplyRepository
 from app.services.processed_webhook_repository import ProcessedWebhookRepository
 from app.utils.logging import get_logger, log_duration, log_event
+from app.utils.profile_context import format_profile_context
 
 logger = get_logger(__name__)
 
@@ -54,6 +55,8 @@ class MentionProcessor:
                 log_event(logger, logging.INFO, "ignoring_own_mention", mention_id=data.mention_id)
                 return
 
+            data = await self._enrich_from_api(data)
+
             async with self._session_factory() as session:
                 processed_repo = ProcessedWebhookRepository(session)
                 pending_repo = PendingReplyRepository(session)
@@ -91,11 +94,13 @@ class MentionProcessor:
                 return
 
             incoming_text = data.text or f"Mention ({data.mention_type})"
+            profile_context = await self._build_profile_context(data)
 
             try:
                 reply_text = await self._gemini.generate_reply(
                     incoming_text,
                     personality_override=self._settings.resolved_system_prompt or None,
+                    profile_context=profile_context or None,
                 )
                 await self._deliver_reply(data, reply_text)
 
@@ -113,6 +118,7 @@ class MentionProcessor:
                     "mention_reply_success",
                     mention_id=data.mention_id,
                     mention_type=data.mention_type,
+                    comment_id=data.comment_id,
                     reply_text=reply_text,
                 )
             except GeminiAPIError as exc:
@@ -145,6 +151,60 @@ class MentionProcessor:
                     error=str(exc),
                 )
 
+    async def _enrich_from_api(self, data: MentionCreate) -> MentionCreate:
+        """Resolve comment id and text from Graph API for comment mentions."""
+        if data.mention_type == "story_mentions":
+            return data
+
+        candidates: list[str] = []
+        if data.comment_id:
+            candidates.append(data.comment_id)
+        if data.mention_id and data.mention_id not in candidates:
+            candidates.append(data.mention_id)
+
+        for candidate in candidates:
+            try:
+                details = await self._instagram.get_comment(candidate)
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "mention_comment_resolved",
+                    mention_id=data.mention_id,
+                    comment_id=candidate,
+                    details=details,
+                )
+                data.comment_id = str(details.get("id") or candidate)
+                if details.get("text"):
+                    data.text = str(details["text"])
+                from_obj = details.get("from") or {}
+                if isinstance(from_obj, dict):
+                    if from_obj.get("id"):
+                        data.from_id = str(from_obj["id"])
+                    if from_obj.get("username"):
+                        data.username = str(from_obj["username"])
+                return data
+            except InstagramAPIError as exc:
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "mention_comment_resolve_failed",
+                    mention_id=data.mention_id,
+                    candidate_id=candidate,
+                    error=str(exc),
+                    status_code=exc.status_code,
+                )
+
+        return data
+
+    async def _build_profile_context(self, data: MentionCreate) -> str:
+        if not self._settings.profile_context_enabled or not data.from_id:
+            return ""
+        profile = await self._instagram.fetch_user_profile(
+            data.from_id,
+            fallback_username=data.username,
+        )
+        return format_profile_context(profile)
+
     @staticmethod
     def _has_reply_target(data: MentionCreate) -> bool:
         if data.mention_type == "story_mentions":
@@ -161,21 +221,25 @@ class MentionProcessor:
             await self._instagram.send_message(data.from_id, reply_text)
             return
 
-        if data.comment_id:
+        if data.mention_type == "mentions" and data.comment_id:
             try:
-                await self._instagram.reply_comment(data.comment_id, reply_text)
+                await self._instagram.send_private_reply_to_comment(data.comment_id, reply_text)
                 return
-            except InstagramAPIError as public_exc:
+            except InstagramAPIError as private_exc:
                 log_event(
                     logger,
                     logging.WARNING,
-                    "mention_public_reply_failed_trying_private",
+                    "mention_private_reply_failed_trying_public",
                     mention_id=data.mention_id,
                     comment_id=data.comment_id,
-                    error=str(public_exc),
+                    error=str(private_exc),
                 )
-                await self._instagram.send_private_reply_to_comment(data.comment_id, reply_text)
+                await self._instagram.reply_comment(data.comment_id, reply_text)
                 return
+
+        if data.comment_id:
+            await self._instagram.reply_comment(data.comment_id, reply_text)
+            return
 
         if data.from_id:
             await self._instagram.send_message(data.from_id, reply_text)

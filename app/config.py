@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     mentions_enabled: bool = Field(default=True, alias="MENTIONS_ENABLED")
     story_mentions_enabled: bool = Field(default=True, alias="STORY_MENTIONS_ENABLED")
     dm_history_limit: int = Field(default=20, alias="DM_HISTORY_LIMIT")
+    profile_context_enabled: bool = Field(default=True, alias="PROFILE_CONTEXT_ENABLED")
 
     # Durability / retry
     retry_on_startup: bool = Field(default=True, alias="RETRY_ON_STARTUP")

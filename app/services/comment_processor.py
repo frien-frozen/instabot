@@ -1,5 +1,7 @@
 """Orchestrates comment processing: spam filter, delay, AI reply, Instagram post."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import random
@@ -13,6 +15,7 @@ from app.services.gemini_service import GeminiAPIError, GeminiService
 from app.services.instagram_service import InstagramAPIError, InstagramService
 from app.services.pending_reply_repository import PendingReplyRepository
 from app.utils.logging import get_logger, log_duration, log_event
+from app.utils.profile_context import format_profile_context
 from app.utils.spam import is_spam
 
 logger = get_logger(__name__)
@@ -193,9 +196,11 @@ class CommentProcessor:
                     return
 
             try:
+                profile_context = await self._build_profile_context(data)
                 reply_text = await self._gemini.generate_reply(
                     data.message,
                     personality_override=prompt_override,
+                    profile_context=profile_context,
                 )
                 await self._instagram.reply_comment(data.comment_id, reply_text)
 
@@ -247,6 +252,16 @@ class CommentProcessor:
                     comment_id=data.comment_id,
                     error=str(exc),
                 )
+
+    async def _build_profile_context(self, data: CommentCreate) -> str | None:
+        if not self._settings.profile_context_enabled or not data.from_id:
+            return None
+        profile = await self._instagram.fetch_user_profile(
+            data.from_id,
+            fallback_username=data.username,
+        )
+        formatted = format_profile_context(profile)
+        return formatted or None
 
     async def _record_failure(self, data: CommentCreate, error: str) -> None:
         async with self._session_factory() as session:

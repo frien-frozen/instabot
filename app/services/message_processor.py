@@ -13,6 +13,7 @@ from app.services.instagram_service import InstagramAPIError, InstagramService
 from app.services.message_repository import MessageRepository
 from app.services.pending_reply_repository import PendingReplyRepository
 from app.utils.logging import get_logger, log_duration, log_event
+from app.utils.profile_context import format_profile_context
 
 logger = get_logger(__name__)
 
@@ -166,6 +167,7 @@ class MessageProcessor:
                     data.text,
                     personality_override=prompt_override,
                     memory_context=memory_context or None,
+                    profile_context=await self._build_profile_context(data),
                     max_output_tokens=256,
                 )
                 result = await self._instagram.send_message(data.sender_id, reply_text)
@@ -226,6 +228,16 @@ class MessageProcessor:
                     message_id=data.message_id,
                     error=str(exc),
                 )
+
+    async def _build_profile_context(self, data: MessageCreate) -> str | None:
+        if not self._settings.profile_context_enabled:
+            return None
+        profile = await self._instagram.fetch_user_profile(
+            data.sender_id,
+            fallback_username=None,
+        )
+        formatted = format_profile_context(profile)
+        return formatted or None
 
     async def _record_failure(self, data: MessageCreate, error: str) -> None:
         async with self._session_factory() as session:
