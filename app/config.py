@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     retry_on_startup: bool = Field(default=True, alias="RETRY_ON_STARTUP")
     max_reply_attempts: int = Field(default=20, alias="MAX_REPLY_ATTEMPTS")
     retry_batch_size: int = Field(default=200, alias="RETRY_BATCH_SIZE")
+    worker_batch_size: int = Field(default=20, alias="WORKER_BATCH_SIZE")
+
+    # Telegram admin
+    telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
+    telegram_admin_ids: str = Field(default="", alias="TELEGRAM_ADMIN_IDS")
 
     # HTTP client
     http_timeout_seconds: int = Field(default=30, alias="HTTP_TIMEOUT_SECONDS")
@@ -74,6 +79,19 @@ class Settings(BaseSettings):
     @property
     def resolved_system_prompt(self) -> str:
         return self.system_prompt.strip()
+
+    @property
+    def telegram_admin_id_list(self) -> list[int]:
+        ids: list[int] = []
+        for part in self.telegram_admin_ids.split(","):
+            part = part.strip()
+            if part.isdigit():
+                ids.append(int(part))
+        return ids
+
+    @property
+    def telegram_enabled(self) -> bool:
+        return bool(self.telegram_bot_token.strip() and self.telegram_admin_id_list)
 
 
 @lru_cache

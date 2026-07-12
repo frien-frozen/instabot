@@ -10,10 +10,12 @@ from app.database import Base
 from app.models import (  # noqa: F401
     Comment,
     Conversation,
+    Event,
     Message,
     PendingReply,
     ProcessedWebhook,
     Setting,
+    Task,
 )
 
 config = context.config

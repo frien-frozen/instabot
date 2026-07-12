@@ -14,13 +14,13 @@ from app.utils.logging import get_logger, log_event
 logger = get_logger(__name__)
 
 # Default when GEMINI_MODEL is missing, invalid, or a gemma-* model.
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
 
-# Fallback chain when primary model returns 503/429 or empty reply.
+# Fallback chain: lite first (paid tier friendly), then flash, then 2.0
 GEMINI_FALLBACK_MODELS = (
+    "gemini-2.5-flash-lite",
     "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-2.5-flash-lite",
 )
 
 # Models known to work with the Gemini API (generateContent).

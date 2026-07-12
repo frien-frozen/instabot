@@ -263,6 +263,13 @@ class InstagramService:
         Uses POST /{ig-user-id}/messages with the Instagram Messaging API.
         """
         ig_user_id = await self.get_authenticated_user_id()
+        recipient_id = str(recipient_id).strip()
+        if not recipient_id:
+            raise InstagramAPIError("DM recipient_id is empty")
+        if recipient_id == ig_user_id:
+            raise InstagramAPIError(
+                f"Refusing to send DM to business account id {recipient_id}; use sender_id from webhook"
+            )
         log_event(
             logger,
             logging.INFO,
@@ -407,6 +414,28 @@ class InstagramService:
                 "id": user_id,
                 "username": fallback_username or "",
             }
+
+    async def resolve_media_id_from_url(self, url: str) -> str:
+        """Resolve Instagram media id from a reel/post URL."""
+        import re
+
+        match = re.search(r"instagram\.com/(?:reel|p|tv)/([A-Za-z0-9_-]+)", url)
+        if not match:
+            raise InstagramAPIError(f"Could not parse Instagram URL: {url}")
+        shortcode = match.group(1)
+        ig_user_id = await self.get_authenticated_user_id()
+
+        result = await self._request(
+            "GET",
+            f"{ig_user_id}/media",
+            params={"fields": "id,permalink,shortcode", "limit": 100},
+        )
+        for item in result.get("data", []):
+            permalink = str(item.get("permalink", ""))
+            if shortcode in permalink or item.get("shortcode") == shortcode:
+                return str(item["id"])
+
+        raise InstagramAPIError(f"Media not found for URL: {url}")
 
     async def get_media(self, media_id: str) -> dict[str, Any]:
         """Fetch metadata for an Instagram media object."""
