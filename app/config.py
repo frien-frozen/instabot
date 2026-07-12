@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from app.gemini_config import DEFAULT_GEMINI_MODEL
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -34,8 +35,7 @@ class Settings(BaseSettings):
 
     # Google Gemini
     gemini_api_key: str = Field(..., alias="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-2.5-flash-lite", alias="GEMINI_MODEL")
-    gemini_fallback_models: str = Field(default="", alias="GEMINI_FALLBACK_MODELS")
+    gemini_model: str = Field(default=DEFAULT_GEMINI_MODEL, alias="GEMINI_MODEL")
     system_prompt: str = Field(default="", alias="SYSTEM_PROMPT")
 
     # Database

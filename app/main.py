@@ -12,6 +12,7 @@ from app.api import webhook_router
 from app.config import get_settings
 from app.database import close_db, get_engine, get_session_factory, run_alembic_migrations
 from app.dependencies import get_gemini_service, get_instagram_service
+from app.gemini_config import DEFAULT_GEMINI_MODEL, is_gemini_ready, set_gemini_ready
 from app.middleware import RequestLoggingMiddleware
 from app.routes import health_router
 from app.services.instagram_service import InstagramAPIError, InstagramService
@@ -49,26 +50,41 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log_event(logger, logging.WARNING, "instagram_token_invalid", error=str(exc))
 
     gemini = get_gemini_service()
+    gemini.log_startup_diagnostics()
     validated = await gemini.validate_model()
     if validated is not None:
-        log_event(logger, logging.INFO, "gemini_model_valid", model=gemini.model)
-    else:
+        set_gemini_ready(True)
         log_event(
             logger,
-            logging.WARNING,
-            "gemini_model_unavailable",
+            logging.INFO,
+            "gemini_ready",
+            model=gemini.model,
+            sdk_version=gemini.sdk_version,
+            api_endpoint=gemini.api_endpoint,
+        )
+    else:
+        set_gemini_ready(False)
+        log_event(
+            logger,
+            logging.ERROR,
+            "gemini_not_ready",
             configured_model=gemini.configured_model,
-            active_model=gemini.model,
-            hint="Replies may fail until a working GEMINI_MODEL is configured",
+            model=gemini.model,
+            sdk_version=gemini.sdk_version,
+            api_endpoint=gemini.api_endpoint,
+            hint=f"Fix GEMINI_API_KEY or set GEMINI_MODEL={DEFAULT_GEMINI_MODEL}",
         )
 
     _worker = EventWorker(
         settings=settings,
         session_factory=get_session_factory(settings),
-        gemini=get_gemini_service(),
+        gemini=gemini,
         instagram=get_instagram_service(),
     )
-    await _worker.start()
+    if is_gemini_ready():
+        await _worker.start()
+    else:
+        log_event(logger, logging.WARNING, "worker_deferred_gemini_unavailable")
 
     _telegram = TelegramBotRunner(settings)
     await _telegram.start()

@@ -13,11 +13,13 @@ from app.schemas import (
     InstagramHealthResponse,
     MessagesHealthResponse,
 )
-from app.services.gemini_service import (
+from app.gemini_config import (
     DEFAULT_GEMINI_MODEL,
-    RECOMMENDED_GEMINI_MODELS,
-    GeminiService,
+    GEMINI_FLASH_LATEST,
+    KNOWN_GEMINI_ALIASES,
+    is_gemini_ready,
 )
+from app.services.gemini_service import GeminiService
 from app.services.instagram_service import InstagramAPIError, InstagramService
 
 router = APIRouter(tags=["health"])
@@ -99,7 +101,19 @@ async def gemini_health_check(
     gemini: GeminiService = Depends(get_gemini_service),
 ) -> GeminiHealthResponse:
     """Verify GEMINI_API_KEY and GEMINI_MODEL with a live test prompt."""
-    recommended = sorted(RECOMMENDED_GEMINI_MODELS)
+    recommended = sorted(KNOWN_GEMINI_ALIASES)
+    if is_gemini_ready():
+        return GeminiHealthResponse(
+            status="ok",
+            model=gemini.model,
+            test_reply="validated at startup",
+            recommended_models=recommended,
+            hint=(
+                f"Using {gemini.model} via {gemini.api_endpoint} "
+                f"(google-genai {gemini.sdk_version})"
+            ),
+        )
+
     test_reply = await gemini.validate_model()
     if test_reply is not None:
         return GeminiHealthResponse(
@@ -108,12 +122,8 @@ async def gemini_health_check(
             test_reply=test_reply,
             recommended_models=recommended,
             hint=(
-                f"Using {gemini.model}"
-                + (
-                    f" (auto-corrected from {gemini.configured_model!r})"
-                    if gemini.configured_model != gemini.model
-                    else ""
-                )
+                f"Using {gemini.model} via {gemini.api_endpoint} "
+                f"(google-genai {gemini.sdk_version})"
             ),
         )
 
@@ -121,8 +131,11 @@ async def gemini_health_check(
         status="error",
         model=gemini.model,
         recommended_models=recommended,
-        error="All configured Gemini models failed validation",
-        hint=f"Set GEMINI_MODEL={DEFAULT_GEMINI_MODEL} in environment variables",
+        error="Configured Gemini model failed validation",
+        hint=(
+            f"Set GEMINI_MODEL={DEFAULT_GEMINI_MODEL} or "
+            f"{GEMINI_FLASH_LATEST} for higher quality"
+        ),
     )
 
 

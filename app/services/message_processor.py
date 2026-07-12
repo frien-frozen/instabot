@@ -7,8 +7,9 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
+from app.gemini_config import DEFAULT_GEMINI_MODEL
 from app.schemas import MessageCreate
-from app.services.gemini_service import DEFAULT_GEMINI_MODEL, GeminiAPIError, GeminiService
+from app.services.gemini_service import GeminiAPIError, GeminiService
 from app.services.instagram_service import InstagramAPIError, InstagramService
 from app.services.message_repository import MessageRepository
 from app.services.pending_reply_repository import PendingReplyRepository

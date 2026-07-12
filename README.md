@@ -113,7 +113,7 @@ Visit `http://localhost:8080/docs` for the interactive API documentation (develo
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `INSTAGRAM_ACCOUNT_ID` | No | Instagram Business Account ID |
 | `META_API_VERSION` | No | Graph API version (default: `v21.0`) |
-| `GEMINI_MODEL` | No | Gemini model name (default: `gemini-2.0-flash`) |
+| `GEMINI_MODEL` | No | Gemini model alias (default: `gemini-flash-lite-latest`; use `gemini-flash-latest` for higher quality) |
 | `REPLY_DELAY_MIN_SECONDS` | No | Minimum reply delay (default: `10`) |
 | `REPLY_DELAY_MAX_SECONDS` | No | Maximum reply delay (default: `90`) |
 | `PORT` | No | Server port (default: `8080`, set by Cloud Run) |
