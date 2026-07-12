@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
 from app.schemas import MessageCreate
-from app.services.gemini_service import GeminiAPIError, GeminiService
+from app.services.gemini_service import DEFAULT_GEMINI_MODEL, GeminiAPIError, GeminiService
 from app.services.instagram_service import InstagramAPIError, InstagramService
 from app.services.message_repository import MessageRepository
 from app.services.pending_reply_repository import PendingReplyRepository
@@ -203,7 +203,7 @@ class MessageProcessor:
                     message_id=data.message_id,
                     model=exc.model,
                     error=str(exc),
-                    hint="Set GEMINI_MODEL=gemini-2.5-flash in Render environment variables",
+                    hint=f"Set GEMINI_MODEL={DEFAULT_GEMINI_MODEL} in Render environment variables",
                 )
 
             except InstagramAPIError as exc:

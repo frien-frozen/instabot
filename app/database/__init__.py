@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+import re
+import subprocess
+import sys
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
@@ -15,6 +20,9 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import Settings, get_settings
+from app.utils.logging import get_logger, log_event
+
+logger = get_logger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -27,6 +35,12 @@ _session_factory: async_sessionmaker[AsyncSession] | None = None
 # libpq query params that asyncpg does not accept in the connection URL
 _ASYNCPG_UNSUPPORTED_QUERY_PARAMS = frozenset(
     {"sslmode", "sslcert", "sslkey", "sslrootcert", "channel_binding"}
+)
+
+_REVISION_PATTERN = re.compile(r'^revision:\s*str\s*=\s*["\']([^"\']+)["\']', re.MULTILINE)
+_UNKNOWN_REVISION_PATTERN = re.compile(
+    r"Can't locate revision identified by ['\"]([^'\"]+)['\"]",
+    re.IGNORECASE,
 )
 
 
@@ -107,29 +121,163 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
+def _run_alembic_command(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "alembic", *args],
+        capture_output=True,
+        text=True,
+    )
+
+
+def _list_migration_revisions() -> list[str]:
+    """Return revision IDs found in alembic/versions (sorted)."""
+    versions_dir = Path(__file__).resolve().parents[2] / "alembic" / "versions"
+    revisions: list[str] = []
+    for path in sorted(versions_dir.glob("*.py")):
+        match = _REVISION_PATTERN.search(path.read_text(encoding="utf-8"))
+        if match:
+            revisions.append(match.group(1))
+    return sorted(revisions)
+
+
+def _get_current_db_revision() -> str | None:
+    result = _run_alembic_command("current")
+    output = (result.stdout or "") + (result.stderr or "")
+    for line in output.splitlines():
+        line = line.strip()
+        if not line or line.startswith("INFO"):
+            continue
+        token = line.split()[0]
+        if token and token != "(head)":
+            return token
+    return None
+
+
+def _repair_stamp_target(unknown_revision: str, available: list[str]) -> str:
+    """
+    Pick a stamp target when alembic_version references a missing revision.
+
+    Prefer the highest available revision that sorts before the unknown one;
+    otherwise fall back to the latest revision in the repository.
+    """
+    if not available:
+        raise RuntimeError("No Alembic revisions found in alembic/versions")
+
+    prior = [rev for rev in available if rev < unknown_revision]
+    if prior:
+        return prior[-1]
+    return available[-1]
+
+
 def run_alembic_migrations() -> None:
     """
     Apply pending Alembic migrations synchronously.
 
     Called at startup so tables exist even if the platform start command
     skips start.sh. Safe to run on every boot (no-op when already at head).
-    """
-    import subprocess
-    import sys
 
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head"],
-        capture_output=True,
-        text=True,
-    )
+    If the database references a revision missing from this deployment, stamp
+    back to the nearest known revision and upgrade again. Failures are logged
+    but do not crash the application.
+    """
+    available = _list_migration_revisions()
+    head = available[-1] if available else None
+
+    result = _run_alembic_command("upgrade", "head")
     if result.stdout:
         print(result.stdout, flush=True)
     if result.stderr:
         print(result.stderr, flush=True)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"Alembic migration failed (exit {result.returncode}): {result.stderr or result.stdout}"
+
+    if result.returncode == 0:
+        log_event(
+            logger,
+            logging.INFO,
+            "database_migrations_applied",
+            head=head,
+            available_revisions=available,
         )
+        return
+
+    combined = (result.stdout or "") + (result.stderr or "")
+    unknown_match = _UNKNOWN_REVISION_PATTERN.search(combined)
+    current = _get_current_db_revision()
+
+    if unknown_match or (current and current not in available):
+        unknown = unknown_match.group(1) if unknown_match else current
+        try:
+            stamp_target = _repair_stamp_target(unknown or "", available)
+        except RuntimeError as exc:
+            log_event(
+                logger,
+                logging.ERROR,
+                "database_migration_repair_failed",
+                error=str(exc),
+                current_revision=current,
+                available_revisions=available,
+                alembic_output=combined.strip(),
+            )
+            return
+
+        log_event(
+            logger,
+            logging.WARNING,
+            "database_migration_repair_stamp",
+            unknown_revision=unknown,
+            stamp_target=stamp_target,
+            available_revisions=available,
+        )
+
+        stamp_result = _run_alembic_command("stamp", stamp_target)
+        if stamp_result.stdout:
+            print(stamp_result.stdout, flush=True)
+        if stamp_result.stderr:
+            print(stamp_result.stderr, flush=True)
+
+        if stamp_result.returncode != 0:
+            log_event(
+                logger,
+                logging.ERROR,
+                "database_migration_stamp_failed",
+                stamp_target=stamp_target,
+                error=(stamp_result.stderr or stamp_result.stdout or "").strip(),
+            )
+            return
+
+        retry = _run_alembic_command("upgrade", "head")
+        if retry.stdout:
+            print(retry.stdout, flush=True)
+        if retry.stderr:
+            print(retry.stderr, flush=True)
+
+        if retry.returncode == 0:
+            log_event(
+                logger,
+                logging.WARNING,
+                "database_migration_repair_succeeded",
+                stamp_target=stamp_target,
+                head=head,
+            )
+            return
+
+        log_event(
+            logger,
+            logging.ERROR,
+            "database_migration_repair_upgrade_failed",
+            stamp_target=stamp_target,
+            error=(retry.stderr or retry.stdout or "").strip(),
+        )
+        return
+
+    log_event(
+        logger,
+        logging.ERROR,
+        "database_migration_failed",
+        current_revision=current,
+        head=head,
+        available_revisions=available,
+        error=combined.strip(),
+    )
 
 
 async def init_db(settings: Settings | None = None) -> None:

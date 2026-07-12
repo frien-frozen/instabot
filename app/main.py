@@ -14,7 +14,6 @@ from app.database import close_db, get_engine, get_session_factory, run_alembic_
 from app.dependencies import get_gemini_service, get_instagram_service
 from app.middleware import RequestLoggingMiddleware
 from app.routes import health_router
-from app.services.gemini_service import GeminiAPIError
 from app.services.instagram_service import InstagramAPIError, InstagramService
 from app.telegram import TelegramBotRunner
 from app.utils.logging import get_logger, log_event, setup_logging
@@ -34,7 +33,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_logging(settings)
 
     run_alembic_migrations()
-    log_event(logger, logging.INFO, "database_migrations_applied")
     get_engine(settings)
 
     try:
@@ -48,14 +46,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             username=profile.get("username"),
         )
     except InstagramAPIError as exc:
-        log_event(logger, logging.ERROR, "instagram_token_invalid", error=str(exc))
+        log_event(logger, logging.WARNING, "instagram_token_invalid", error=str(exc))
 
-    try:
-        gemini = get_gemini_service()
-        await gemini.validate_model()
+    gemini = get_gemini_service()
+    validated = await gemini.validate_model()
+    if validated is not None:
         log_event(logger, logging.INFO, "gemini_model_valid", model=gemini.model)
-    except GeminiAPIError as exc:
-        log_event(logger, logging.ERROR, "gemini_model_invalid", error=str(exc))
+    else:
+        log_event(
+            logger,
+            logging.WARNING,
+            "gemini_model_unavailable",
+            configured_model=gemini.configured_model,
+            active_model=gemini.model,
+            hint="Replies may fail until a working GEMINI_MODEL is configured",
+        )
 
     _worker = EventWorker(
         settings=settings,

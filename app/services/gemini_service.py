@@ -13,24 +13,29 @@ from app.utils.logging import get_logger, log_event
 
 logger = get_logger(__name__)
 
-# Default when GEMINI_MODEL is missing, invalid, or a gemma-* model.
+# Default paid-tier model when GEMINI_MODEL is missing or invalid.
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
 
-# Fallback chain: lite first (paid tier friendly), then flash, then 2.0
-GEMINI_FALLBACK_MODELS = (
+# Built-in fallback chain (override via GEMINI_FALLBACK_MODELS env).
+DEFAULT_GEMINI_FALLBACK_MODELS = (
     "gemini-2.5-flash-lite",
-    "gemini-2.5-flash",
     "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
 )
 
-# Models known to work with the Gemini API (generateContent).
+# Models supported for generateContent on current Gemini API.
 RECOMMENDED_GEMINI_MODELS = frozenset({
-    "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
     "gemini-1.5-flash",
     "gemini-1.5-pro",
+})
+
+# Deprecated / often unavailable — mapped to fallbacks at runtime.
+DEPRECATED_GEMINI_MODELS = frozenset({
+    "gemini-2.5-flash",
+    "gemini-2.0-flash-thinking-exp",
 })
 
 DEFAULT_SYSTEM_PROMPT = """You are Ismatulloh Bakhtiyorov.
@@ -265,16 +270,26 @@ class GeminiAPIError(Exception):
         self.status_code = status_code
 
 
+def parse_fallback_models(raw: str | None) -> tuple[str, ...]:
+    """Parse comma-separated GEMINI_FALLBACK_MODELS."""
+    if not raw or not raw.strip():
+        return DEFAULT_GEMINI_FALLBACK_MODELS
+    models = tuple(m.strip() for m in raw.split(",") if m.strip())
+    return models or DEFAULT_GEMINI_FALLBACK_MODELS
+
+
 def resolve_gemini_model(configured: str) -> tuple[str, str | None]:
     """
     Pick the model to use at runtime.
 
     Returns (resolved_model, correction_reason).
-    gemma-* models and other unsupported names fall back to DEFAULT_GEMINI_MODEL.
     """
     model = (configured or "").strip()
     if not model:
         return DEFAULT_GEMINI_MODEL, "empty_config"
+
+    if model in DEPRECATED_GEMINI_MODELS:
+        return DEFAULT_GEMINI_MODEL, "deprecated_model"
 
     if model in RECOMMENDED_GEMINI_MODELS:
         return model, None
@@ -299,6 +314,7 @@ class GeminiService:
         key = (api_key or settings.gemini_api_key).strip()
         self._client = genai.Client(api_key=key)
         self._configured_model = model or settings.gemini_model
+        self._fallback_models = parse_fallback_models(settings.gemini_fallback_models)
         resolved, reason = resolve_gemini_model(self._configured_model)
         self._model = resolved
 
@@ -310,10 +326,7 @@ class GeminiService:
                 configured_model=self._configured_model,
                 resolved_model=self._model,
                 reason=reason,
-                hint=(
-                    f"Update GEMINI_MODEL on Render to {DEFAULT_GEMINI_MODEL} "
-                    f"(gemma-* models return empty replies on this API)"
-                ),
+                hint=f"Set GEMINI_MODEL={DEFAULT_GEMINI_MODEL} in environment variables",
             )
 
     @classmethod
@@ -329,45 +342,78 @@ class GeminiService:
     def configured_model(self) -> str:
         return self._configured_model
 
-    async def validate_model(self) -> str:
+    async def validate_model(self) -> str | None:
         """
-        Send a minimal test prompt to verify GEMINI_MODEL is valid.
+        Verify a Gemini model with a minimal test prompt.
 
-        Returns the model's test reply on success.
+        Tries the configured model then fallbacks. Updates self._model to the
+        first working model. Returns None if all models fail (does not raise).
         """
-        if self._model not in RECOMMENDED_GEMINI_MODELS:
-            log_event(
-                logger,
-                logging.WARNING,
-                "gemini_model_unrecognized",
-                model=self._model,
-                recommended=sorted(RECOMMENDED_GEMINI_MODELS),
-                hint="Set GEMINI_MODEL=gemini-2.5-flash on Render if replies fail",
-            )
+        for model in self._models_to_try():
+            try:
+                response = await self._client.aio.models.generate_content(
+                    model=model,
+                    contents="Reply with exactly: ok",
+                    config=types.GenerateContentConfig(
+                        max_output_tokens=10,
+                        temperature=0,
+                    ),
+                )
+                reply = (response.text or "").strip()
+                if not reply:
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "gemini_validation_empty_reply",
+                        model=model,
+                    )
+                    continue
 
-        response = await self._client.aio.models.generate_content(
-            model=self._model,
-            contents="Reply with exactly: ok",
-            config=types.GenerateContentConfig(
-                max_output_tokens=10,
-                temperature=0,
-            ),
+                if model != self._model:
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "gemini_model_fallback_active",
+                        configured_model=self._configured_model,
+                        previous_model=self._model,
+                        active_model=model,
+                    )
+                self._model = model
+                return reply
+            except Exception as exc:
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "gemini_validation_failed",
+                    model=model,
+                    error=str(exc),
+                    will_try_fallback=self._should_try_next_model(exc),
+                )
+
+        log_event(
+            logger,
+            logging.ERROR,
+            "gemini_all_models_failed",
+            configured_model=self._configured_model,
+            models_tried=self._models_to_try(),
         )
-        reply = (response.text or "").strip()
-        if not reply:
-            raise GeminiAPIError(
-                "Gemini model validation returned an empty reply",
-                model=self._model,
-            )
-        return reply
+        return None
 
     def _models_to_try(self) -> list[str]:
-        """Primary model first, then fallbacks without duplicates."""
+        """Primary model first, then configured fallbacks without duplicates."""
         models: list[str] = []
-        for name in (self._model, *GEMINI_FALLBACK_MODELS):
+        for name in (self._model, *self._fallback_models):
             if name not in models:
                 models.append(name)
         return models
+
+    @staticmethod
+    def _should_try_next_model(exc: Exception) -> bool:
+        """Whether to try the next model in the fallback chain."""
+        text = str(exc).upper()
+        if any(token in text for token in ("404", "NOT_FOUND", "NOT FOUND", "MODEL_NOT_FOUND")):
+            return True
+        return GeminiService._is_retryable_error(exc)
 
     @staticmethod
     def _is_retryable_error(exc: Exception) -> bool:
@@ -465,19 +511,27 @@ class GeminiService:
                         reply_text=reply,
                         attempt=attempt,
                     )
+                    if model != self._model:
+                        self._model = model
                     return reply
 
                 except Exception as exc:
+                    try_next = self._should_try_next_model(exc)
                     retryable = self._is_retryable_error(exc)
                     log_event(
                         logger,
-                        logging.WARNING if retryable else logging.ERROR,
+                        logging.WARNING,
                         "gemini_api_error",
                         model=model,
                         attempt=attempt,
                         error=str(exc),
                         retryable=retryable,
+                        try_next_model=try_next,
                     )
+
+                    if try_next and not retryable:
+                        last_error = GeminiAPIError(str(exc), model=model)
+                        break
 
                     if not retryable:
                         raise GeminiAPIError(str(exc), model=model) from exc

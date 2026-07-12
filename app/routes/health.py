@@ -16,7 +16,6 @@ from app.schemas import (
 from app.services.gemini_service import (
     DEFAULT_GEMINI_MODEL,
     RECOMMENDED_GEMINI_MODELS,
-    GeminiAPIError,
     GeminiService,
 )
 from app.services.instagram_service import InstagramAPIError, InstagramService
@@ -101,8 +100,8 @@ async def gemini_health_check(
 ) -> GeminiHealthResponse:
     """Verify GEMINI_API_KEY and GEMINI_MODEL with a live test prompt."""
     recommended = sorted(RECOMMENDED_GEMINI_MODELS)
-    try:
-        test_reply = await gemini.validate_model()
+    test_reply = await gemini.validate_model()
+    if test_reply is not None:
         return GeminiHealthResponse(
             status="ok",
             model=gemini.model,
@@ -117,14 +116,14 @@ async def gemini_health_check(
                 )
             ),
         )
-    except GeminiAPIError as exc:
-        return GeminiHealthResponse(
-            status="error",
-            model=gemini.model,
-            recommended_models=recommended,
-            error=str(exc),
-            hint="Set GEMINI_MODEL=gemini-2.5-flash in Render environment variables",
-        )
+
+    return GeminiHealthResponse(
+        status="error",
+        model=gemini.model,
+        recommended_models=recommended,
+        error="All configured Gemini models failed validation",
+        hint=f"Set GEMINI_MODEL={DEFAULT_GEMINI_MODEL} in environment variables",
+    )
 
 
 @router.get("/")

@@ -34,7 +34,8 @@ class Settings(BaseSettings):
 
     # Google Gemini
     gemini_api_key: str = Field(..., alias="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemini-2.5-flash-lite", alias="GEMINI_MODEL")
+    gemini_fallback_models: str = Field(default="", alias="GEMINI_FALLBACK_MODELS")
     system_prompt: str = Field(default="", alias="SYSTEM_PROMPT")
 
     # Database
