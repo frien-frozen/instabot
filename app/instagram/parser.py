@@ -35,9 +35,12 @@ class WebhookParser:
             return []
 
         events: list[ParsedEvent] = []
-        events.extend(self._extract_comments(body))
-        events.extend(self._extract_messages(body))
-        events.extend(self._extract_mentions(body))
+        if self._settings.comments_enabled:
+            events.extend(self._extract_comments(body))
+        if self._settings.messages_enabled:
+            events.extend(self._extract_messages(body))
+        if self._settings.mentions_enabled:
+            events.extend(self._extract_mentions(body))
         return events
 
     def normalize_body(self, body: dict[str, Any]) -> dict[str, Any]:
