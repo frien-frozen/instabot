@@ -142,13 +142,16 @@ def _list_migration_revisions() -> list[str]:
 
 def _get_current_db_revision() -> str | None:
     result = _run_alembic_command("current")
+    if result.returncode != 0:
+        return None
     output = (result.stdout or "") + (result.stderr or "")
+    available = set(_list_migration_revisions())
     for line in output.splitlines():
         line = line.strip()
-        if not line or line.startswith("INFO"):
+        if not line or line.startswith("INFO") or line.startswith("Traceback"):
             continue
         token = line.split()[0]
-        if token and token != "(head)":
+        if token in available or (token.isalnum() and token not in {"(head)", "ERROR", "FAILED"}):
             return token
     return None
 
@@ -200,11 +203,32 @@ def run_alembic_migrations() -> None:
         return
 
     combined = (result.stdout or "") + (result.stderr or "")
+    if "planLimitReached" in combined or "db.prisma.io" in combined:
+        log_event(
+            logger,
+            logging.ERROR,
+            "database_plan_limit_reached",
+            error="Prisma/database account restriction (planLimitReached). Update DATABASE_URL to a working Postgres.",
+            alembic_output=combined.strip()[-2000:],
+        )
+        return
+
     unknown_match = _UNKNOWN_REVISION_PATTERN.search(combined)
     current = _get_current_db_revision()
 
     if unknown_match or (current and current not in available):
         unknown = unknown_match.group(1) if unknown_match else current
+        if not unknown or unknown.lower().startswith("traceback") or " " in unknown:
+            log_event(
+                logger,
+                logging.ERROR,
+                "database_migration_failed",
+                current_revision=current,
+                head=head,
+                available_revisions=available,
+                error=combined.strip()[-2000:],
+            )
+            return
         try:
             stamp_target = _repair_stamp_target(unknown or "", available)
         except RuntimeError as exc:

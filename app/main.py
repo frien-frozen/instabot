@@ -82,12 +82,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         instagram=get_instagram_service(),
     )
     if is_gemini_ready():
-        await _worker.start()
+        try:
+            await _worker.start()
+        except Exception as exc:
+            log_event(
+                logger,
+                logging.ERROR,
+                "worker_start_failed",
+                error=str(exc),
+                hint="Check DATABASE_URL — app will keep running but events will not process",
+            )
     else:
         log_event(logger, logging.WARNING, "worker_deferred_gemini_unavailable")
 
     _telegram = TelegramBotRunner(settings)
-    await _telegram.start()
+    try:
+        await _telegram.start()
+    except Exception as exc:
+        log_event(logger, logging.WARNING, "telegram_start_failed", error=str(exc))
 
     yield
 
