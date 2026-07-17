@@ -14,7 +14,6 @@ from app.config import Settings, get_settings
 from app.database import get_session_factory
 from app.instagram.parser import WebhookParser
 from app.repositories.event_repository import EventRepository
-from app.gemini_config import is_gemini_ready
 from app.utils.logging import get_logger, log_event
 from app.utils.webhook_logging import log_all_webhook_events
 
@@ -40,12 +39,6 @@ async def receive_webhook(
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Save events to queue and return immediately."""
-    if not is_gemini_ready():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Gemini model not validated; webhook temporarily unavailable",
-        )
-
     started = time.monotonic()
     raw_body = await request.body()
 

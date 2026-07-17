@@ -12,7 +12,7 @@ from app.api import webhook_router
 from app.config import get_settings
 from app.database import close_db, get_session_factory, init_db
 from app.dependencies import get_gemini_service, get_instagram_service
-from app.gemini_config import DEFAULT_GEMINI_MODEL, is_gemini_ready, set_gemini_ready
+from app.gemini_config import set_gemini_ready
 from app.middleware import RequestLoggingMiddleware
 from app.routes import health_router
 from app.services.instagram_service import InstagramAPIError, InstagramService
@@ -77,16 +77,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             api_endpoint=gemini.api_endpoint,
         )
     else:
-        set_gemini_ready(False)
+        # Transient Gemini 503/overload must not block Instagram webhooks or the worker.
+        set_gemini_ready(True)
         log_event(
             logger,
-            logging.ERROR,
-            "gemini_not_ready",
+            logging.WARNING,
+            "gemini_startup_validation_skipped",
             configured_model=gemini.configured_model,
             model=gemini.model,
             sdk_version=gemini.sdk_version,
             api_endpoint=gemini.api_endpoint,
-            hint=f"Fix GEMINI_API_KEY or set GEMINI_MODEL={DEFAULT_GEMINI_MODEL}",
+            hint="Startup probe failed (often temporary 503); webhooks and worker will still run",
         )
 
     _worker = EventWorker(
@@ -95,19 +96,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         gemini=gemini,
         instagram=get_instagram_service(),
     )
-    if is_gemini_ready():
-        try:
-            await _worker.start()
-        except Exception as exc:
-            log_event(
-                logger,
-                logging.ERROR,
-                "worker_start_failed",
-                error=str(exc),
-                hint="Check MONGODB_URI — app will keep running but events will not process",
-            )
-    else:
-        log_event(logger, logging.WARNING, "worker_deferred_gemini_unavailable")
+    try:
+        await _worker.start()
+    except Exception as exc:
+        log_event(
+            logger,
+            logging.ERROR,
+            "worker_start_failed",
+            error=str(exc),
+            hint="Check MONGODB_URI — app will keep running but events will not process",
+        )
 
     _telegram = TelegramBotRunner(settings)
     try:

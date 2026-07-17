@@ -188,49 +188,70 @@ class GeminiService:
         """
         Verify the configured model with a minimal test prompt.
 
+        Retries transient 503/429 overload errors a few times.
         Returns the test reply on success, or None if validation fails.
         """
-        try:
-            response = await self._client.aio.models.generate_content(
-                model=self._model,
-                contents="Reply with exactly: ok",
-                config=types.GenerateContentConfig(
-                    max_output_tokens=10,
-                    temperature=0,
-                ),
-            )
-            reply = (response.text or "").strip()
-            if not reply:
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                response = await self._client.aio.models.generate_content(
+                    model=self._model,
+                    contents="Reply with exactly: ok",
+                    config=types.GenerateContentConfig(
+                        max_output_tokens=10,
+                        temperature=0,
+                    ),
+                )
+                reply = (response.text or "").strip()
+                if not reply:
+                    log_event(
+                        logger,
+                        logging.ERROR,
+                        "gemini_validation_empty_reply",
+                        model=self._model,
+                        api_endpoint=self.api_endpoint,
+                        attempt=attempt,
+                    )
+                    return None
+
                 log_event(
                     logger,
-                    logging.ERROR,
-                    "gemini_validation_empty_reply",
+                    logging.INFO,
+                    "gemini_validation_ok",
                     model=self._model,
+                    sdk_version=self.sdk_version,
                     api_endpoint=self.api_endpoint,
+                    test_reply=reply,
+                    attempt=attempt,
                 )
-                return None
+                return reply
+            except Exception as exc:
+                last_error = exc
+                retryable = self._is_retryable_error(exc)
+                log_event(
+                    logger,
+                    logging.WARNING if retryable else logging.ERROR,
+                    "gemini_validation_failed",
+                    model=self._model,
+                    sdk_version=self.sdk_version,
+                    api_endpoint=self.api_endpoint,
+                    error=str(exc),
+                    attempt=attempt,
+                    retryable=retryable,
+                )
+                if not retryable or attempt >= 3:
+                    break
+                await asyncio.sleep(2**attempt)
 
-            log_event(
-                logger,
-                logging.INFO,
-                "gemini_validation_ok",
-                model=self._model,
-                sdk_version=self.sdk_version,
-                api_endpoint=self.api_endpoint,
-                test_reply=reply,
-            )
-            return reply
-        except Exception as exc:
+        if last_error is not None:
             log_event(
                 logger,
                 logging.ERROR,
-                "gemini_validation_failed",
+                "gemini_validation_exhausted",
                 model=self._model,
-                sdk_version=self.sdk_version,
-                api_endpoint=self.api_endpoint,
-                error=str(exc),
+                error=str(last_error),
             )
-            return None
+        return None
 
     @staticmethod
     def _is_retryable_error(exc: Exception) -> bool:
