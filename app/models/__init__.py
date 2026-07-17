@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models."""
+"""SQLAlchemy ORM models → Beanie documents."""
 
 from app.models.comment import Comment
 from app.models.conversation import Conversation

@@ -6,9 +6,8 @@ import asyncio
 import logging
 import time
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from app.config import Settings
+from app.database import SessionFactory
 from app.repositories.event_repository import EventRepository
 from app.repositories.task_repository import TaskRepository
 from app.services.gemini_service import GeminiService
@@ -26,7 +25,7 @@ class EventWorker:
   def __init__(
       self,
       settings: Settings,
-      session_factory: async_sessionmaker[AsyncSession],
+      session_factory: SessionFactory,
       gemini: GeminiService,
       instagram: InstagramService,
   ) -> None:

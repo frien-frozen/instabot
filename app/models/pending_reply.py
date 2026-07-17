@@ -2,44 +2,32 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import DateTime, Index, Integer, String, Text, UniqueConstraint, func
-from sqlalchemy.orm import Mapped, mapped_column
+from beanie import Document, Indexed
+from pydantic import Field
+from pymongo import ASCENDING, IndexModel
 
-from app.database import Base
 
-
-class PendingReply(Base):
+class PendingReply(Document):
     """Event waiting for an AI reply after a transient failure or crash."""
 
-    __tablename__ = "pending_replies"
+    id: Optional[int] = None
+    event_type: Indexed(str)
+    external_event_id: str
+    payload: str
+    attempts: int = 0
+    last_error: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    external_event_id: Mapped[str] = mapped_column(String(512), nullable=False)
-    payload: Mapped[str] = mapped_column(Text, nullable=False)
-    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
-
-    __table_args__ = (
-        UniqueConstraint(
-            "event_type",
-            "external_event_id",
-            name="uq_pending_replies_event",
-        ),
-        Index("ix_pending_replies_event_type", "event_type"),
-        Index("ix_pending_replies_created_at", "created_at"),
-    )
+    class Settings:
+        name = "pending_replies"
+        indexes = [
+            IndexModel(
+                [("event_type", ASCENDING), ("external_event_id", ASCENDING)],
+                unique=True,
+            ),
+            IndexModel([("created_at", ASCENDING)]),
+        ]

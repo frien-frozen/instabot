@@ -5,12 +5,11 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from pymongo.errors import DuplicateKeyError
 
+from app.database import MongoSession, next_id
 from app.models.conversation import Conversation
 from app.models.message import Message
-from app.schemas import MessageCreate
 from app.utils.logging import get_logger, log_event
 
 logger = get_logger(__name__)
@@ -19,15 +18,12 @@ logger = get_logger(__name__)
 class MessageRepository:
     """Data access layer for Instagram DM conversations and messages."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: MongoSession) -> None:
         self._session = session
 
     async def has_processed_message(self, message_id: str) -> bool:
         """Return True if this incoming message already received a reply."""
-        result = await self._session.execute(
-            select(Message).where(Message.message_id == message_id)
-        )
-        message = result.scalar_one_or_none()
+        message = await Message.find_one(Message.message_id == message_id)
         if message is None:
             return False
         if message.direction == "outgoing":
@@ -35,13 +31,10 @@ class MessageRepository:
         return message.reply_status in ("sent", "skipped")
 
     async def get_incoming_message(self, message_id: str) -> Message | None:
-        result = await self._session.execute(
-            select(Message).where(
-                Message.message_id == message_id,
-                Message.direction == "incoming",
-            )
+        return await Message.find_one(
+            Message.message_id == message_id,
+            Message.direction == "incoming",
         )
-        return result.scalar_one_or_none()
 
     async def get_or_create_conversation(
         self,
@@ -51,21 +44,22 @@ class MessageRepository:
         username: str | None = None,
     ) -> Conversation:
         """Find or create a conversation thread for an Instagram user."""
-        query = select(Conversation).where(Conversation.user_id == user_id)
         if account_id:
-            query = query.where(Conversation.account_id == account_id)
-
-        result = await self._session.execute(query)
-        conversation = result.scalar_one_or_none()
+            conversation = await Conversation.find_one(
+                Conversation.user_id == user_id,
+                Conversation.account_id == account_id,
+            )
+        else:
+            conversation = await Conversation.find_one(Conversation.user_id == user_id)
 
         if conversation is None:
             conversation = Conversation(
+                id=await next_id("conversations"),
                 user_id=user_id,
                 account_id=account_id,
                 username=username,
             )
-            self._session.add(conversation)
-            await self._session.flush()
+            await conversation.insert()
             log_event(
                 logger,
                 logging.INFO,
@@ -75,6 +69,7 @@ class MessageRepository:
             )
         elif username and not conversation.username:
             conversation.username = username
+            await conversation.save()
 
         return conversation
 
@@ -89,10 +84,8 @@ class MessageRepository:
         timestamp: datetime | None = None,
     ) -> Message | None:
         """Persist a message; return None if duplicate."""
-        existing = await self._session.execute(
-            select(Message).where(Message.message_id == message_id)
-        )
-        if existing.scalar_one_or_none() is not None:
+        existing = await Message.find_one(Message.message_id == message_id)
+        if existing is not None:
             log_event(
                 logger,
                 logging.INFO,
@@ -102,18 +95,29 @@ class MessageRepository:
             return None
 
         message = Message(
+            id=await next_id("messages"),
             message_id=message_id,
-            conversation_id=conversation.id,
+            conversation_id=conversation.id,  # type: ignore[arg-type]
             sender_id=sender_id,
             text=text,
             direction=direction,
             timestamp=timestamp,
             reply_status="pending" if direction == "incoming" else None,
         )
-        self._session.add(message)
+        try:
+            await message.insert()
+        except DuplicateKeyError:
+            log_event(
+                logger,
+                logging.INFO,
+                "message_duplicate_skipped",
+                message_id=message_id,
+            )
+            return None
+
         conversation.last_message = text
         conversation.updated_at = datetime.now(timezone.utc)
-        await self._session.flush()
+        await conversation.save()
 
         log_event(
             logger,
@@ -134,16 +138,14 @@ class MessageRepository:
         exclude_message_id: str | None = None,
     ) -> str:
         """Format recent DM turns for Gemini context."""
-        query = (
-            select(Message)
-            .where(Message.conversation_id == conversation_id)
-            .order_by(Message.timestamp.asc().nulls_last(), Message.id.asc())
-        )
+        query = Message.find(Message.conversation_id == conversation_id)
         if exclude_message_id:
-            query = query.where(Message.message_id != exclude_message_id)
+            query = Message.find(
+                Message.conversation_id == conversation_id,
+                Message.message_id != exclude_message_id,
+            )
 
-        result = await self._session.execute(query)
-        messages = list(result.scalars().all())
+        messages = await query.sort([("timestamp", 1), ("_id", 1)]).to_list()
         if limit > 0:
             messages = messages[-limit:]
 
@@ -162,11 +164,12 @@ class MessageRepository:
         *,
         account_id: str | None = None,
     ) -> Conversation | None:
-        query = select(Conversation).where(Conversation.user_id == user_id)
         if account_id:
-            query = query.where(Conversation.account_id == account_id)
-        result = await self._session.execute(query)
-        return result.scalar_one_or_none()
+            return await Conversation.find_one(
+                Conversation.user_id == user_id,
+                Conversation.account_id == account_id,
+            )
+        return await Conversation.find_one(Conversation.user_id == user_id)
 
     async def mark_reply_sent(self, message_id: str) -> None:
         message = await self.get_incoming_message(message_id)
@@ -174,7 +177,7 @@ class MessageRepository:
             return
         message.reply_status = "sent"
         message.reply_error = None
-        await self._session.flush()
+        await message.save()
 
     async def mark_reply_failed(self, message_id: str, error: str) -> None:
         message = await self.get_incoming_message(message_id)
@@ -182,7 +185,7 @@ class MessageRepository:
             return
         message.reply_status = "failed"
         message.reply_error = error[:4000]
-        await self._session.flush()
+        await message.save()
 
     async def mark_reply_skipped(self, message_id: str) -> None:
         message = await self.get_incoming_message(message_id)
@@ -190,7 +193,7 @@ class MessageRepository:
             return
         message.reply_status = "skipped"
         message.reply_error = None
-        await self._session.flush()
+        await message.save()
 
     @staticmethod
     def timestamp_from_ms(ms: int | None) -> datetime | None:

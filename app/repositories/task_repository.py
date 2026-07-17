@@ -2,33 +2,29 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
+from app.database import MongoSession, next_id
 from app.models.task import Task, TaskType
 
 
 class TaskRepository:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: MongoSession) -> None:
         self._session = session
 
     async def list_enabled(self) -> list[Task]:
-        result = await self._session.execute(
-            select(Task)
-            .where(Task.enabled.is_(True))
-            .order_by(Task.priority.asc(), Task.id.asc())
+        return (
+            await Task.find(Task.enabled == True)  # noqa: E712
+            .sort([("priority", 1), ("_id", 1)])
+            .to_list()
         )
-        return list(result.scalars().all())
 
     async def list_all(self) -> list[Task]:
-        result = await self._session.execute(select(Task).order_by(Task.priority.asc(), Task.id.asc()))
-        return list(result.scalars().all())
+        return await Task.find_all().sort([("priority", 1), ("_id", 1)]).to_list()
 
     async def get(self, task_id: int) -> Task | None:
-        result = await self._session.execute(select(Task).where(Task.id == task_id))
-        return result.scalar_one_or_none()
+        return await Task.get(task_id)
 
     async def create(
         self,
@@ -40,34 +36,33 @@ class TaskRepository:
         priority: int = 100,
     ) -> Task:
         task = Task(
+            id=await next_id("tasks"),
             name=name,
             task_type=task_type,
             settings=settings,
             enabled=enabled,
             priority=priority,
         )
-        self._session.add(task)
-        await self._session.flush()
+        await task.insert()
         return task
 
     async def update(self, task: Task, **fields: Any) -> Task:
         for key, value in fields.items():
             setattr(task, key, value)
-        await self._session.flush()
+        task.updated_at = datetime.now(timezone.utc)
+        await task.save()
         return task
 
     async def delete(self, task_id: int) -> bool:
         task = await self.get(task_id)
         if task is None:
             return False
-        await self._session.delete(task)
-        await self._session.flush()
+        await task.delete()
         return True
 
     async def ensure_defaults(self) -> None:
-        """Seed built-in tasks when the table is empty."""
-        result = await self._session.execute(select(Task.id).limit(1))
-        if result.scalar_one_or_none() is not None:
+        """Seed built-in tasks when the collection is empty."""
+        if await Task.find_one() is not None:
             return
 
         defaults = [
@@ -91,7 +86,11 @@ class TaskRepository:
             }),
         ]
         for name, task_type, priority, settings in defaults:
-            self._session.add(
-                Task(name=name, task_type=task_type, priority=priority, settings=settings, enabled=True)
-            )
-        await self._session.flush()
+            await Task(
+                id=await next_id("tasks"),
+                name=name,
+                task_type=task_type,
+                priority=priority,
+                settings=settings,
+                enabled=True,
+            ).insert()

@@ -2,44 +2,30 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import DateTime, Index, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from beanie import Document, Indexed
+from pydantic import Field
+from pymongo import ASCENDING, IndexModel
 
-from app.database import Base
 
-
-class Conversation(Base):
+class Conversation(Document):
     """Instagram Direct Message conversation thread."""
 
-    __tablename__ = "conversations"
+    id: Optional[int] = None
+    user_id: Indexed(str)
+    username: Optional[str] = None
+    last_message: Optional[str] = None
+    account_id: Optional[str] = None
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    last_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    account_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-
-    messages: Mapped[list["Message"]] = relationship(  # noqa: F821
-        "Message",
-        back_populates="conversation",
-        cascade="all, delete-orphan",
-    )
-
-    __table_args__ = (
-        Index("ix_conversations_user_id", "user_id"),
-        Index("ix_conversations_account_user", "account_id", "user_id", unique=True),
-    )
+    class Settings:
+        name = "conversations"
+        indexes = [
+            IndexModel(
+                [("account_id", ASCENDING), ("user_id", ASCENDING)],
+                unique=True,
+            ),
+        ]

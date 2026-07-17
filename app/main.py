@@ -10,7 +10,7 @@ from fastapi import FastAPI
 
 from app.api import webhook_router
 from app.config import get_settings
-from app.database import close_db, get_engine, get_session_factory, run_alembic_migrations
+from app.database import close_db, get_session_factory, init_db
 from app.dependencies import get_gemini_service, get_instagram_service
 from app.gemini_config import DEFAULT_GEMINI_MODEL, is_gemini_ready, set_gemini_ready
 from app.middleware import RequestLoggingMiddleware
@@ -33,8 +33,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     setup_logging(settings)
 
-    run_alembic_migrations()
-    get_engine(settings)
+    await init_db(settings)
+    log_event(logger, logging.INFO, "mongodb_initialized", database=settings.mongodb_database)
 
     try:
         ig = InstagramService(settings)
@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 logging.ERROR,
                 "worker_start_failed",
                 error=str(exc),
-                hint="Check DATABASE_URL — app will keep running but events will not process",
+                hint="Check MONGODB_URI — app will keep running but events will not process",
             )
     else:
         log_event(logger, logging.WARNING, "worker_deferred_gemini_unavailable")

@@ -20,7 +20,7 @@ AI-powered Instagram comment auto-reply SaaS. Instabot listens for new Instagram
 | Runtime | Python 3.12 |
 | Framework | FastAPI + Uvicorn |
 | AI | Google Gemini (`google-genai`) |
-| Database | PostgreSQL + SQLAlchemy (async) |
+| Database | MongoDB Atlas + Motor/Beanie |
 | Migrations | Alembic |
 | Validation | Pydantic v2 |
 | Deployment | Docker, Google Cloud Run |
@@ -110,7 +110,9 @@ Visit `http://localhost:8080/docs` for the interactive API documentation (develo
 | `VERIFY_TOKEN` | Yes | Random string for Meta webhook verification |
 | `META_ACCESS_TOKEN` | Yes | Long-lived Page access token with `instagram_manage_comments` |
 | `GEMINI_API_KEY` | Yes | Google AI Studio API key |
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `DATABASE_URL` | Yes | _(removed)_ Use `MONGODB_URI` |
+| `MONGODB_URI` | Yes | MongoDB Atlas URI (`mongodb+srv://...`) |
+| `MONGODB_DATABASE` | No | Database name (default: `instabot`) |
 | `INSTAGRAM_ACCOUNT_ID` | No | Instagram Business Account ID |
 | `META_API_VERSION` | No | Graph API version (default: `v21.0`) |
 | `GEMINI_MODEL` | No | Gemini model alias (default: `gemini-flash-lite-latest`; use `gemini-flash-latest` for higher quality) |

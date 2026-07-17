@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from app.config import Settings
+from app.database import SessionFactory
 from app.gemini_config import DEFAULT_GEMINI_MODEL
 from app.schemas import MessageCreate
 from app.services.gemini_service import GeminiAPIError, GeminiService
@@ -37,7 +36,7 @@ class MessageProcessor:
     def __init__(
         self,
         settings: Settings,
-        session_factory: async_sessionmaker[AsyncSession],
+        session_factory: SessionFactory,
         gemini_service: GeminiService,
         instagram_service: InstagramService,
     ) -> None:

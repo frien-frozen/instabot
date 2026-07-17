@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from app.config import Settings
+from app.database import SessionFactory
 from app.schemas import CommentCreate, MentionCreate, MessageCreate
 from app.services.comment_processor import CommentProcessor
 from app.services.mention_processor import MentionProcessor
@@ -23,7 +22,7 @@ class RetryService:
     def __init__(
         self,
         settings: Settings,
-        session_factory: async_sessionmaker[AsyncSession],
+        session_factory: SessionFactory,
         comment_processor: CommentProcessor,
         message_processor: MessageProcessor,
         mention_processor: MentionProcessor,

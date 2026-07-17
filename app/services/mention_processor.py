@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from app.config import Settings
+from app.database import SessionFactory
 from app.schemas import MentionCreate
 from app.services.gemini_service import GeminiAPIError, GeminiService
 from app.services.instagram_service import InstagramAPIError, InstagramService
@@ -26,7 +25,7 @@ class MentionProcessor:
     def __init__(
         self,
         settings: Settings,
-        session_factory: async_sessionmaker[AsyncSession],
+        session_factory: SessionFactory,
         gemini_service: GeminiService,
         instagram_service: InstagramService,
     ) -> None:

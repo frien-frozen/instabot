@@ -38,8 +38,9 @@ class Settings(BaseSettings):
     gemini_model: str = Field(default=DEFAULT_GEMINI_MODEL, alias="GEMINI_MODEL")
     system_prompt: str = Field(default="", alias="SYSTEM_PROMPT")
 
-    # Database
-    database_url: str = Field(..., alias="DATABASE_URL")
+    # Database (MongoDB Atlas — native mongodb+srv:// URI, not Atlas SQL)
+    mongodb_uri: str = Field(..., alias="MONGODB_URI")
+    mongodb_database: str = Field(default="instabot", alias="MONGODB_DATABASE")
 
     # Reply behavior
     reply_delay_min_seconds: int = Field(default=3, alias="REPLY_DELAY_MIN_SECONDS")

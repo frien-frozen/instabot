@@ -6,9 +6,8 @@ import asyncio
 import logging
 import random
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from app.config import Settings
+from app.database import SessionFactory
 from app.gemini_config import DEFAULT_GEMINI_MODEL
 from app.schemas import CommentCreate
 from app.services.comment_repository import CommentRepository
@@ -42,7 +41,7 @@ class CommentProcessor:
     def __init__(
         self,
         settings: Settings,
-        session_factory: async_sessionmaker[AsyncSession],
+        session_factory: SessionFactory,
         gemini_service: GeminiService,
         instagram_service: InstagramService,
     ) -> None:

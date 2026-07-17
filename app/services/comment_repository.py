@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from pymongo.errors import DuplicateKeyError
 
+from app.database import MongoSession, next_id
 from app.models.comment import Comment
 from app.schemas import CommentCreate
 from app.utils.logging import get_logger, log_event
@@ -23,15 +23,12 @@ class CommentRepository:
     handlers remain thin.
     """
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: MongoSession) -> None:
         self._session = session
 
     async def get_by_comment_id(self, comment_id: str) -> Comment | None:
         """Return an existing comment by its Instagram comment ID."""
-        result = await self._session.execute(
-            select(Comment).where(Comment.comment_id == comment_id)
-        )
-        return result.scalar_one_or_none()
+        return await Comment.find_one(Comment.comment_id == comment_id)
 
     async def has_been_replied(self, comment_id: str) -> bool:
         """Return True if this comment has already received a reply."""
@@ -55,6 +52,7 @@ class CommentRepository:
             return None
 
         comment = Comment(
+            id=await next_id("comments"),
             comment_id=data.comment_id,
             username=data.username,
             message=data.message,
@@ -63,8 +61,17 @@ class CommentRepository:
             account_id=data.account_id,
             replied=False,
         )
-        self._session.add(comment)
-        await self._session.flush()
+        try:
+            await comment.insert()
+        except DuplicateKeyError:
+            log_event(
+                logger,
+                logging.INFO,
+                "comment_duplicate_skipped",
+                comment_id=data.comment_id,
+            )
+            return None
+
         log_event(
             logger,
             logging.INFO,
@@ -84,7 +91,7 @@ class CommentRepository:
         comment.replied = True
         comment.reply_text = reply_text
         comment.replied_at = datetime.now(timezone.utc)
-        await self._session.flush()
+        await comment.save()
 
         log_event(
             logger,

@@ -3,10 +3,9 @@
 from functools import lru_cache
 
 from fastapi import Depends
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.config import Settings, get_settings
-from app.database import get_db_session, get_session_factory
+from app.config import get_settings
+from app.database import MongoSession, get_db_session, get_session_factory
 from app.services.comment_processor import CommentProcessor
 from app.services.comment_repository import CommentRepository
 from app.services.gemini_service import GeminiService
@@ -68,6 +67,6 @@ def get_retry_service() -> RetryService:
 
 
 async def get_comment_repository(
-    session: AsyncSession = Depends(get_db_session),
+    session: MongoSession = Depends(get_db_session),
 ) -> CommentRepository:
     return CommentRepository(session)
