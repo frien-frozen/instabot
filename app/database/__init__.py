@@ -39,8 +39,16 @@ SessionFactory = Callable[[], Any]
 def get_client(settings: Settings | None = None) -> AsyncIOMotorClient:
     global _client
     if _client is None:
+        import certifi
+
         cfg = settings or get_settings()
-        _client = AsyncIOMotorClient(cfg.mongodb_uri)
+        # Atlas requires TLS; pin CA bundle so Render/OpenSSL can complete the handshake.
+        _client = AsyncIOMotorClient(
+            cfg.mongodb_uri,
+            tls=True,
+            tlsCAFile=certifi.where(),
+            serverSelectionTimeoutMS=30000,
+        )
     return _client
 
 
@@ -68,7 +76,11 @@ async def init_db(settings: Settings | None = None) -> None:
     """Initialize Motor client and Beanie document models."""
     global _initialized
     cfg = settings or get_settings()
+    client = get_client(cfg)
     db = get_db(cfg)
+
+    # Fail fast with a clear TLS/network error before Beanie setup.
+    await client.admin.command("ping")
 
     from app.models.comment import Comment
     from app.models.conversation import Conversation

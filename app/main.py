@@ -33,8 +33,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     setup_logging(settings)
 
-    await init_db(settings)
-    log_event(logger, logging.INFO, "mongodb_initialized", database=settings.mongodb_database)
+    try:
+        await init_db(settings)
+        log_event(logger, logging.INFO, "mongodb_initialized", database=settings.mongodb_database)
+    except Exception as exc:
+        log_event(
+            logger,
+            logging.ERROR,
+            "mongodb_init_failed",
+            error=str(exc),
+            hint=(
+                "1) Atlas Network Access: allow 0.0.0.0/0 (or Render IPs). "
+                "2) Set PYTHON_VERSION=3.12.0 in Render (not 3.14). "
+                "3) MONGODB_URI must be mongodb+srv://... with correct password."
+            ),
+        )
+        raise
 
     try:
         ig = InstagramService(settings)
