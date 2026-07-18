@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.database import close_db, get_session_factory, init_db
 from app.dependencies import get_gemini_service, get_instagram_service
 from app.gemini_config import set_gemini_ready
+from app.knowledge import load_knowledge, loaded_files
 from app.middleware import RequestLoggingMiddleware
 from app.routes import health_router
 from app.services.instagram_service import InstagramAPIError, InstagramService
@@ -32,6 +33,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     settings = get_settings()
     setup_logging(settings)
+
+    load_knowledge(force=True)
+    log_event(
+        logger,
+        logging.INFO,
+        "knowledge_ready",
+        files=loaded_files(),
+        file_count=len(loaded_files()),
+    )
 
     try:
         await init_db(settings)
