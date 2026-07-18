@@ -22,6 +22,10 @@ from app.utils.comment_context import (
     classify_post_intent,
     extract_caption_triggers,
 )
+from app.utils.comment_intent import (
+    classify_comment_intent_fast,
+    pick_supportive_reply,
+)
 from app.utils.logging import get_logger, log_event
 from app.utils.profile_context import format_profile_context
 from app.utils.spam import is_spam
@@ -79,11 +83,44 @@ class CommentTaskHandler(BaseTaskHandler):
             await self._handle_campaign(ctx, data, campaign)
             return
 
+        comment_intent = await self._classify_intent(ctx, data, media)
+
+        # Classified spam after soft filters → skip silently.
+        if comment_intent == "Spam":
+            log_event(
+                logger,
+                logging.INFO,
+                "comment_intent_spam_skipped",
+                comment_id=data.comment_id,
+                message=data.message,
+            )
+            return
+
+        # Supportive = human thanks only. Never sell / DM / lead-collect.
+        if comment_intent == "Supportive":
+            reply_text = pick_supportive_reply(data.message)
+            await ig.reply_comment(data.comment_id, reply_text)
+            async with ctx.session_factory() as session:
+                repo = CommentRepository(session)
+                await repo.mark_replied(data.comment_id, reply_text)
+                await session.commit()
+            log_event(
+                logger,
+                logging.INFO,
+                "task_comment_supportive_reply",
+                task_id=task.id,
+                event_id=event.event_id,
+                comment_id=data.comment_id,
+                intent=comment_intent,
+                reply_text=reply_text,
+            )
+            return
+
         fixed = cfg.get("fixed_reply")
         if fixed and not cfg.get("ai_enabled", True):
             reply_text = str(fixed)
         else:
-            reply_text = await self._ai_reply(ctx, data, media)
+            reply_text = await self._ai_reply(ctx, data, media, comment_intent=comment_intent)
 
         await ig.reply_comment(data.comment_id, reply_text)
 
@@ -101,7 +138,37 @@ class CommentTaskHandler(BaseTaskHandler):
             comment_id=data.comment_id,
             media_id=data.media_id,
             post_intent=media.intent if media else None,
+            comment_intent=comment_intent,
             gemini_model=ctx.gemini.model,
+        )
+
+    async def _classify_intent(
+        self,
+        ctx: HandlerContext,
+        data: CommentCreate,
+        media: Media | None,
+    ) -> str:
+        fast = classify_comment_intent_fast(data.message)
+        if fast is not None:
+            log_event(
+                logger,
+                logging.INFO,
+                "comment_intent_fast",
+                comment_id=data.comment_id,
+                intent=fast,
+                message=data.message,
+            )
+            return fast
+
+        post_context = None
+        if media is not None:
+            post_context = (
+                f"Post caption:\n{media.caption or '(none)'}\n"
+                f"Post intent: {media.intent}"
+            )
+        return await ctx.gemini.classify_comment_intent(
+            data.message,
+            post_context=post_context,
         )
 
     async def _get_or_fetch_media(self, ctx: HandlerContext, media_id: str) -> Media | None:
@@ -232,6 +299,8 @@ class CommentTaskHandler(BaseTaskHandler):
         ctx: HandlerContext,
         data: CommentCreate,
         media: Media | None,
+        *,
+        comment_intent: str | None = None,
     ) -> str:
         profile_context = None
         display_name = ""
@@ -283,6 +352,7 @@ class CommentTaskHandler(BaseTaskHandler):
             from_id=data.from_id,
             memory_context=memory_context,
             previous_comments=previous_comments,
+            comment_intent=comment_intent,
         )
 
         return await ctx.gemini.generate_reply(

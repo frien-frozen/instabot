@@ -165,6 +165,7 @@ def build_comment_context_package(
     campaign: CampaignPlan | Campaign | None = None,
     memory_context: str | None = None,
     previous_comments: str | None = None,
+    comment_intent: str | None = None,
 ) -> str:
     """Assemble the full context package for Gemini comment replies."""
     sections: list[str] = []
@@ -186,6 +187,8 @@ def build_comment_context_package(
     sections.append("COMMENT")
     sections.append(f"Text: {comment_text}")
     sections.append(f"Comment ID: {comment_id}")
+    if comment_intent:
+        sections.append(f"Comment Intent: {comment_intent}")
 
     sections.append("")
     sections.append("COMMENT AUTHOR")
@@ -227,8 +230,15 @@ def build_comment_context_package(
         "- If the caption asked people to comment a keyword for a guide/list, "
         "and this comment matches that CTA, thank them and confirm the material was/will be sent in DM.\n"
         "- Keep the public comment reply short (1–2 sentences). No intimate medical details.\n"
-        "- Do not invent that a DM was sent unless the campaign flow is handling DM delivery."
+        "- Do not invent that a DM was sent unless the campaign flow is handling DM delivery.\n"
+        "- Supportive comments (praise/emojis) are engagement, not leads — thank only, never sell."
     )
+
+    if comment_intent:
+        from app.utils.comment_intent import intent_reply_instructions
+
+        sections.append("")
+        sections.append(intent_reply_instructions(comment_intent))
 
     return "\n".join(sections)
 

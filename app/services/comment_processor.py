@@ -25,6 +25,7 @@ from app.utils.comment_context import (
     classify_post_intent,
     extract_caption_triggers,
 )
+from app.utils.comment_intent import classify_comment_intent_fast, pick_supportive_reply
 from app.utils.logging import get_logger, log_duration, log_event
 from app.utils.profile_context import format_profile_context
 from app.utils.spam import is_spam
@@ -213,6 +214,50 @@ class CommentProcessor:
                         await session.commit()
                     return
 
+                comment_intent = classify_comment_intent_fast(data.message)
+                if comment_intent is None:
+                    post_context_for_class = None
+                    if media is not None:
+                        post_context_for_class = (
+                            f"Post caption:\n{media.caption or '(none)'}\n"
+                            f"Post intent: {media.intent}"
+                        )
+                    comment_intent = await self._gemini.classify_comment_intent(
+                        data.message,
+                        post_context=post_context_for_class,
+                    )
+
+                if comment_intent == "Spam":
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "comment_intent_spam_skipped",
+                        comment_id=data.comment_id,
+                        message=data.message,
+                    )
+                    async with self._session_factory() as session:
+                        await PendingReplyRepository(session).complete(EVENT_TYPE, data.comment_id)
+                        await session.commit()
+                    return
+
+                if comment_intent == "Supportive":
+                    reply_text = pick_supportive_reply(data.message)
+                    await self._instagram.reply_comment(data.comment_id, reply_text)
+                    async with self._session_factory() as session:
+                        repo = CommentRepository(session)
+                        await repo.mark_replied(data.comment_id, reply_text)
+                        await PendingReplyRepository(session).complete(EVENT_TYPE, data.comment_id)
+                        await session.commit()
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "comment_supportive_reply_success",
+                        comment_id=data.comment_id,
+                        reply_text=reply_text,
+                        intent=comment_intent,
+                    )
+                    return
+
                 profile_context, display_name = await self._build_profile_context(data)
                 memory_context, previous_comments = await self._load_memory(data)
                 post_context = build_comment_context_package(
@@ -225,6 +270,7 @@ class CommentProcessor:
                     memory_context=memory_context,
                     previous_comments=previous_comments,
                     campaign=None,
+                    comment_intent=comment_intent,
                 )
                 reply_text = await self._gemini.generate_reply(
                     data.message,
@@ -250,6 +296,7 @@ class CommentProcessor:
                     reply_text=reply_text,
                     media_id=data.media_id,
                     post_intent=media.intent if media else None,
+                    comment_intent=comment_intent,
                 )
 
             except GeminiAPIError as exc:

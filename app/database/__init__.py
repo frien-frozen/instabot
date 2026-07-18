@@ -86,6 +86,7 @@ async def init_db(settings: Settings | None = None) -> None:
     from app.models.comment import Comment
     from app.models.conversation import Conversation
     from app.models.event import Event
+    from app.models.lead import Lead
     from app.models.media import Media
     from app.models.message import Message
     from app.models.pending_reply import PendingReply
@@ -100,6 +101,7 @@ async def init_db(settings: Settings | None = None) -> None:
             Comment,
             Conversation,
             Event,
+            Lead,
             Media,
             Message,
             PendingReply,

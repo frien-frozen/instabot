@@ -25,3 +25,6 @@ Confirm you received them and explain:
 
 - For consultations: administrator will help finalize time (daytime 09:00–16:00 or evening online 19:00–22:00)
 - For surgery interest: Sherzod will call about preparation, recovery, schedule, dates
+
+The backend automatically exports complete leads (name + phone + problem) to the clinic CRM spreadsheet.
+You do not write to any spreadsheet — just collect the information naturally in chat.

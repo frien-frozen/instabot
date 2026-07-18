@@ -66,6 +66,14 @@ class Settings(BaseSettings):
     http_timeout_seconds: int = Field(default=30, alias="HTTP_TIMEOUT_SECONDS")
     http_max_retries: int = Field(default=3, alias="HTTP_MAX_RETRIES")
 
+    # Google Sheets CRM (service account — never hardcode credentials)
+    google_sheets_enabled: bool = Field(default=False, alias="GOOGLE_SHEETS_ENABLED")
+    google_sheets_spreadsheet_id: str = Field(default="", alias="GOOGLE_SHEETS_SPREADSHEET_ID")
+    google_sheets_worksheet_name: str = Field(default="Leads", alias="GOOGLE_SHEETS_WORKSHEET_NAME")
+    # Path to service account JSON file OR inline JSON string
+    google_service_account_file: str = Field(default="", alias="GOOGLE_SERVICE_ACCOUNT_FILE")
+    google_service_account_json: str = Field(default="", alias="GOOGLE_SERVICE_ACCOUNT_JSON")
+
     @property
     def meta_graph_base_url(self) -> str:
         return f"https://{self.meta_graph_host}/{self.meta_api_version}"

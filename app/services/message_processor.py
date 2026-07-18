@@ -9,7 +9,9 @@ from app.database import SessionFactory
 from app.gemini_config import DEFAULT_GEMINI_MODEL
 from app.schemas import MessageCreate
 from app.services.gemini_service import GeminiAPIError, GeminiService
+from app.services.google_sheets_service import GoogleSheetsService
 from app.services.instagram_service import InstagramAPIError, InstagramService
+from app.services.lead_service import LeadService, conversation_may_contain_lead
 from app.services.message_repository import MessageRepository
 from app.services.pending_reply_repository import PendingReplyRepository
 from app.utils.logging import get_logger, log_duration, log_event
@@ -193,6 +195,17 @@ class MessageProcessor:
                     await repo.mark_reply_sent(data.message_id)
                     await PendingReplyRepository(session).complete(EVENT_TYPE, data.message_id)
                     await session.commit()
+                    conversation_id = conversation.id
+                    username = conversation.username
+
+                await self._maybe_export_lead(
+                    sender_id=data.sender_id,
+                    username=username,
+                    conversation_id=conversation_id if isinstance(conversation_id, int) else None,
+                    account_id=data.account_id,
+                    memory=memory_context or "",
+                    latest_text=data.text,
+                )
 
             except GeminiAPIError as exc:
                 await self._record_failure(data, str(exc))
@@ -238,6 +251,42 @@ class MessageProcessor:
         )
         formatted = format_profile_context(profile)
         return formatted or None
+
+    async def _maybe_export_lead(
+        self,
+        *,
+        sender_id: str,
+        username: str | None,
+        conversation_id: int | None,
+        account_id: str | None,
+        memory: str,
+        latest_text: str,
+    ) -> None:
+        combined = f"{memory}\n{latest_text}"
+        if not conversation_may_contain_lead(combined):
+            return
+        try:
+            payload = await self._gemini.extract_lead(
+                conversation_history=memory,
+                latest_message=latest_text,
+                instagram_username=username,
+            )
+            if not payload.get("lead_collected"):
+                return
+            link = f"https://ig.me/{username}" if username else ""
+            async with self._session_factory() as session:
+                sheets = GoogleSheetsService(self._settings)
+                await LeadService(session, sheets).process_extraction(
+                    payload,
+                    instagram_user_id=sender_id,
+                    instagram_username=username,
+                    conversation_id=conversation_id,
+                    account_id=account_id,
+                    conversation_link=link,
+                )
+                await session.commit()
+        except Exception as exc:
+            log_event(logger, logging.ERROR, "lead_pipeline_failed", error=str(exc), user_id=sender_id)
 
     async def _record_failure(self, data: MessageCreate, error: str) -> None:
         async with self._session_factory() as session:

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
+from typing import Any
 
 from google import genai
 from google.genai import types
@@ -16,9 +19,12 @@ from app.gemini_config import (
     normalize_gemini_model,
 )
 from app.knowledge import get_system_prompt
+from app.utils.comment_intent import COMMENT_INTENTS
 from app.utils.logging import get_logger, log_event
 
 logger = get_logger(__name__)
+
+_JSON_BLOCK = re.compile(r"\{[\s\S]*\}")
 
 # System prompt is built from knowledge/*.md (see app.knowledge.load_knowledge).
 DEFAULT_SYSTEM_PROMPT = ""  # populated at startup via load_knowledge(); use get_system_prompt()
@@ -291,3 +297,155 @@ class GeminiService:
         if last_error:
             raise last_error
         raise GeminiAPIError("Gemini request failed", model=self._model)
+
+    @staticmethod
+    def _parse_json_object(text: str) -> dict[str, Any] | None:
+        raw = (text or "").strip()
+        if not raw:
+            return None
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
+        try:
+            data = json.loads(raw)
+            return data if isinstance(data, dict) else None
+        except json.JSONDecodeError:
+            match = _JSON_BLOCK.search(raw)
+            if not match:
+                return None
+            try:
+                data = json.loads(match.group(0))
+                return data if isinstance(data, dict) else None
+            except json.JSONDecodeError:
+                return None
+
+    async def classify_comment_intent(
+        self,
+        comment_text: str,
+        *,
+        post_context: str | None = None,
+    ) -> str:
+        """
+        Classify an Instagram comment into a single intent label.
+
+        Returns one of COMMENT_INTENTS. Defaults to Question on failure.
+        """
+        allowed = ", ".join(COMMENT_INTENTS)
+        system = (
+            "You classify Instagram comments for a medical clinic page.\n"
+            f"Return ONLY valid JSON: {{\"intent\": \"<one of: {allowed}>\"}}\n\n"
+            "Rules:\n"
+            "- Supportive = praise, emoji reactions (🔥❤️👏), Mashallah, Zo'r, Gap yo'q, Respect — NOT leads\n"
+            "- Greeting = hello / salom only\n"
+            "- Question = asks for info\n"
+            "- Consultation Inquiry = wants consultation / qabul\n"
+            "- Operation Inquiry = surgery / operatsiya interest\n"
+            "- Lead Magnet Trigger = commenting a CTA keyword from the caption\n"
+            "- Lead = clearly wants to book / leave contacts\n"
+            "- Complaint = unhappy / negative\n"
+            "- Spam = promo / irrelevant scrape\n"
+        )
+        blocks: list[str] = []
+        if post_context:
+            blocks.append(post_context)
+        blocks.append(f"Comment to classify:\n{comment_text}")
+        blocks.append('Respond with JSON only, e.g. {"intent":"Supportive"}')
+
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=self._model,
+                contents="\n\n".join(blocks),
+                config=types.GenerateContentConfig(
+                    system_instruction=system,
+                    temperature=0.1,
+                    max_output_tokens=40,
+                ),
+            )
+            parsed = self._parse_json_object(response.text or "")
+            intent = str((parsed or {}).get("intent") or "").strip()
+            for label in COMMENT_INTENTS:
+                if intent.lower() == label.lower():
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "comment_intent_classified",
+                        intent=label,
+                        comment_text=comment_text,
+                    )
+                    return label
+        except Exception as exc:
+            log_event(
+                logger,
+                logging.WARNING,
+                "comment_intent_classify_failed",
+                error=str(exc),
+                comment_text=comment_text,
+            )
+
+        return "Question"
+
+    async def extract_lead(
+        self,
+        *,
+        conversation_history: str,
+        latest_message: str,
+        instagram_username: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Extract structured lead fields from a DM thread.
+
+        Gemini only returns JSON — never writes to Sheets.
+        """
+        system = (
+            "You extract patient lead data from an Instagram DM with a clinic admin assistant.\n"
+            "Return ONLY valid JSON with this shape:\n"
+            "{\n"
+            '  "lead_collected": true|false,\n'
+            '  "name": "string or empty",\n'
+            '  "phone": "string or empty",\n'
+            '  "city": "string or empty",\n'
+            '  "problem": "short clinical summary",\n'
+            '  "category": "Hormonal|Urology|Operation|Monitoring|Unknown",\n'
+            '  "service": "Day Consultation|Evening Consultation|Monthly Monitoring|Operation|Online Consultation|Unknown",\n'
+            '  "preferred_date": "string or empty",\n'
+            '  "conversation_summary": "2-4 short sentences for the clinic admin"\n'
+            "}\n\n"
+            "Set lead_collected=true ONLY when name AND phone AND problem are all present.\n"
+            "If anything required is missing, lead_collected=false and still fill what you know.\n"
+            "conversation_summary must be concise for a human admin (Sherzod) — not raw chat.\n"
+            "Do not invent phone numbers or names."
+        )
+        user_content = (
+            f"Instagram username: {instagram_username or 'unknown'}\n\n"
+            f"Conversation:\n{conversation_history or '(none)'}\n\n"
+            f"Latest user message:\n{latest_message}"
+        )
+
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=self._model,
+                contents=user_content,
+                config=types.GenerateContentConfig(
+                    system_instruction=system,
+                    temperature=0.1,
+                    max_output_tokens=350,
+                ),
+            )
+            parsed = self._parse_json_object(response.text or "")
+            if not parsed:
+                log_event(logger, logging.WARNING, "lead_extract_parse_failed", raw=response.text)
+                return {"lead_collected": False}
+
+            log_event(
+                logger,
+                logging.INFO,
+                "lead_extract_ok",
+                lead_collected=bool(parsed.get("lead_collected")),
+                has_name=bool(parsed.get("name")),
+                has_phone=bool(parsed.get("phone")),
+                has_problem=bool(parsed.get("problem")),
+            )
+            return parsed
+        except Exception as exc:
+            log_event(logger, logging.WARNING, "lead_extract_failed", error=str(exc))
+            return {"lead_collected": False}

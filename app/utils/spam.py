@@ -73,14 +73,18 @@ def is_spam(text: str) -> tuple[bool, str | None]:
     """
     Evaluate whether a comment should be ignored as spam.
 
+    Emoji-only reactions (🔥, ❤️, etc.) are NOT spam — they are supportive
+    engagement and get a human thank-you reply elsewhere.
+
     Returns:
         (is_spam, reason) — reason is None when the comment is not spam.
     """
     if not text or not text.strip():
         return True, "empty_comment"
 
+    # Pure emoji reactions are engagement, not spam.
     if is_emoji_only(text):
-        return True, "emoji_only"
+        return False, None
 
     if is_single_character(text):
         return True, "single_character"
