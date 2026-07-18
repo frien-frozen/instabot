@@ -22,6 +22,7 @@ class Comment(Document):
     username: str = "unknown"
     message: str
     media_id: str = ""
+    from_id: Optional[str] = None
     parent_comment_id: Optional[str] = None
     replied: bool = False
     reply_text: Optional[str] = None
@@ -33,6 +34,7 @@ class Comment(Document):
         name = "comments"
         indexes = [
             IndexModel([("media_id", ASCENDING)]),
+            IndexModel([("from_id", ASCENDING)]),
             IndexModel([("replied", ASCENDING)]),
             IndexModel([("created_at", ASCENDING)]),
         ]

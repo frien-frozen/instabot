@@ -195,6 +195,7 @@ class GeminiService:
         personality_override: str | None = None,
         memory_context: str | None = None,
         profile_context: str | None = None,
+        post_context: str | None = None,
         max_output_tokens: int = 100,
     ) -> str:
         """
@@ -205,6 +206,7 @@ class GeminiService:
             personality_override: Optional custom system prompt.
             memory_context: Optional prior conversation turns (DM history).
             profile_context: Optional Instagram profile summary for warmth.
+            post_context: Optional full post/campaign context package for comments.
             max_output_tokens: Cap on reply length (DMs use a higher limit).
 
         Returns:
@@ -213,11 +215,17 @@ class GeminiService:
         system_prompt = get_system_prompt(override=personality_override)
 
         blocks: list[str] = []
+        if post_context:
+            blocks.append(post_context)
         if profile_context:
             blocks.append(f"About the person you're talking to:\n{profile_context}")
         if memory_context:
             blocks.append(f"Conversation so far:\n{memory_context}")
         blocks.append(f"Latest user message:\n{comment_text}")
+        blocks.append(
+            "Reply rules for THIS message: max 2 short sentences, one idea only, "
+            "no paragraphs or sales stories. Chat like Instagram, not an article."
+        )
         user_content = "\n\n".join(blocks)
 
         log_event(
@@ -230,6 +238,7 @@ class GeminiService:
             has_memory=bool(memory_context),
             memory_turns=len(memory_context.splitlines()) if memory_context else 0,
             has_profile=bool(profile_context),
+            has_post_context=bool(post_context),
         )
 
         last_error: GeminiAPIError | None = None

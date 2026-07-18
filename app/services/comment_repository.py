@@ -58,6 +58,7 @@ class CommentRepository:
             message=data.message,
             media_id=data.media_id,
             parent_comment_id=data.parent_comment_id,
+            from_id=data.from_id,
             account_id=data.account_id,
             replied=False,
         )
@@ -101,3 +102,39 @@ class CommentRepository:
             reply_text=reply_text,
         )
         return comment
+
+    async def recent_by_user(
+        self,
+        *,
+        from_id: str | None = None,
+        username: str | None = None,
+        limit: int = 5,
+        exclude_comment_id: str | None = None,
+    ) -> list[Comment]:
+        """Recent comments from the same person (for Gemini memory)."""
+        rows: list[Comment] = []
+        if from_id:
+            rows = (
+                await Comment.find(Comment.from_id == from_id)
+                .sort([("created_at", -1)])
+                .limit(limit + 5)
+                .to_list()
+            )
+        elif username:
+            rows = (
+                await Comment.find(Comment.username == username)
+                .sort([("created_at", -1)])
+                .limit(limit + 5)
+                .to_list()
+            )
+        else:
+            return []
+
+        matched: list[Comment] = []
+        for row in rows:
+            if exclude_comment_id and row.comment_id == exclude_comment_id:
+                continue
+            matched.append(row)
+            if len(matched) >= limit:
+                break
+        return list(reversed(matched))

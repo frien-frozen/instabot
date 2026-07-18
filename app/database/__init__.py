@@ -82,9 +82,11 @@ async def init_db(settings: Settings | None = None) -> None:
     # Fail fast with a clear TLS/network error before Beanie setup.
     await client.admin.command("ping")
 
+    from app.models.campaign import Campaign
     from app.models.comment import Comment
     from app.models.conversation import Conversation
     from app.models.event import Event
+    from app.models.media import Media
     from app.models.message import Message
     from app.models.pending_reply import PendingReply
     from app.models.processed_webhook import ProcessedWebhook
@@ -94,9 +96,11 @@ async def init_db(settings: Settings | None = None) -> None:
     await init_beanie(
         database=db,
         document_models=[
+            Campaign,
             Comment,
             Conversation,
             Event,
+            Media,
             Message,
             PendingReply,
             ProcessedWebhook,

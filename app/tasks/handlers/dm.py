@@ -74,7 +74,7 @@ class DmTaskHandler(BaseTaskHandler):
             personality_override=prompt,
             memory_context=memory or None,
             profile_context=profile_context,
-            max_output_tokens=256,
+            max_output_tokens=140,
         )
 
         result = await ig.send_message(recipient, reply_text)

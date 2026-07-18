@@ -74,7 +74,7 @@ class ReelEngagementHandler(BaseTaskHandler):
                 dm_prompt,
                 personality_override=ctx.settings.resolved_system_prompt or None,
                 profile_context=profile_context,
-                max_output_tokens=256,
+                max_output_tokens=140,
             )
 
         await ig.send_message(user_id, dm_text)

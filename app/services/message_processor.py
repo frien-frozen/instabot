@@ -168,7 +168,7 @@ class MessageProcessor:
                     personality_override=prompt_override,
                     memory_context=memory_context or None,
                     profile_context=await self._build_profile_context(data),
-                    max_output_tokens=256,
+                    max_output_tokens=140,
                 )
                 result = await self._instagram.send_message(data.sender_id, reply_text)
 

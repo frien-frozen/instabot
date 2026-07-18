@@ -442,7 +442,12 @@ class InstagramService:
         return await self._request(
             "GET",
             media_id,
-            params={"fields": "id,caption,media_type,permalink,timestamp"},
+            params={
+                "fields": (
+                    "id,caption,media_type,media_product_type,permalink,"
+                    "timestamp,like_count,comments_count,username"
+                )
+            },
         )
 
     async def get_comment(self, comment_id: str) -> dict[str, Any]:
