@@ -45,10 +45,15 @@ class EventWorker:
           return
       self._running = True
       async with self._session_factory() as session:
-          await TaskRepository(session).ensure_defaults()
+          actions = await TaskRepository(session).ensure_defaults()
           await session.commit()
       self._task = asyncio.create_task(self._loop())
-      log_event(logger, logging.INFO, "event_worker_started")
+      log_event(
+          logger,
+          logging.INFO,
+          "event_worker_started",
+          task_defaults=actions or ["ok"],
+      )
 
   async def stop(self) -> None:
       self._running = False

@@ -28,21 +28,27 @@ async def build_main_menu_text(settings: Settings) -> str:
     async with factory() as session:
         tasks = await TaskRepository(session).list_all()
         stats = await EventRepository(session).count_by_status()
+    enabled = sum(1 for t in tasks if t.enabled)
     lines = [
         "🤖 *Instagram Automation Platform*",
         "",
-        f"Tasks: {len(tasks)}",
+        f"Tasks: {len(tasks)} ({enabled} on)",
         f"Events pending: {stats.get('pending', 0)}",
         f"Events failed: {stats.get('failed', 0)}",
         "",
         "Use the buttons below to manage automations.",
+        "",
+        "Commands:",
+        "`/enable <id>` · `/disable <id>` · `/toggle <id>`",
+        "`/delete <id>` · `/repair`",
     ]
     return "\n".join(lines)
 
 
 MAIN_KEYBOARD = [
     ["📋 Tasks", "➕ Create Task"],
-    ["📊 Statistics", "📝 Logs"],
+    ["🔧 Repair Tasks", "📊 Statistics"],
+    ["📝 Logs"],
 ]
 
 
@@ -51,11 +57,18 @@ async def list_tasks_text(settings: Settings) -> str:
     async with factory() as session:
         tasks = await TaskRepository(session).list_all()
     if not tasks:
-        return "No tasks yet. Tap *Create Task*."
-    lines = ["*Tasks*"]
+        return "No tasks yet. Tap *Repair Tasks* or *Create Task*."
+    lines = [
+        "*Tasks*",
+        "",
+        "Toggle: `/toggle <id>`",
+        "Enable: `/enable <id>`",
+        "Disable: `/disable <id>`",
+        "",
+    ]
     for t in tasks:
-        status = "✅" if t.enabled else "⏸"
-        lines.append(f"{status} `{t.id}` — {t.name} ({t.task_type})")
+        status = "✅ ON" if t.enabled else "⏸ OFF"
+        lines.append(f"{status} `{t.id}` — {t.name} (`{t.task_type}`)")
     return "\n".join(lines)
 
 
@@ -67,6 +80,45 @@ async def stats_text(settings: Settings) -> str:
     for key in ("pending", "processing", "completed", "failed"):
         lines.append(f"• {key}: {stats.get(key, 0)}")
     return "\n".join(lines)
+
+
+async def repair_tasks(settings: Settings) -> str:
+    """Create/enable missing core DM + comment + mention tasks."""
+    factory = get_session_factory(settings)
+    async with factory() as session:
+        actions = await TaskRepository(session).ensure_defaults()
+        await session.commit()
+        tasks = await TaskRepository(session).list_all()
+    enabled = [t for t in tasks if t.enabled]
+    detail = ", ".join(actions) if actions else "already healthy"
+    log_event(logger, logging.INFO, "telegram_tasks_repaired", actions=actions)
+    return (
+        f"✅ Core tasks repaired ({detail}).\n"
+        f"Enabled now: {len(enabled)}/{len(tasks)}\n"
+        "DM, Comment, and Mention auto-replies are ON."
+    )
+
+
+async def set_task_enabled(settings: Settings, task_id: int, enabled: bool) -> str:
+    factory = get_session_factory(settings)
+    async with factory() as session:
+        task = await TaskRepository(session).set_enabled(task_id, enabled)
+        await session.commit()
+    if task is None:
+        return f"Task `{task_id}` not found."
+    state = "enabled ✅" if task.enabled else "disabled ⏸"
+    return f"Task `{task.id}` ({task.name}) {state}."
+
+
+async def toggle_task(settings: Settings, task_id: int) -> str:
+    factory = get_session_factory(settings)
+    async with factory() as session:
+        task = await TaskRepository(session).toggle_enabled(task_id)
+        await session.commit()
+    if task is None:
+        return f"Task `{task_id}` not found."
+    state = "enabled ✅" if task.enabled else "disabled ⏸"
+    return f"Task `{task.id}` ({task.name}) {state}."
 
 
 async def create_reel_task(settings: Settings, chat_id: int, wizard: dict[str, Any]) -> str:
