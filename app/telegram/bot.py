@@ -47,6 +47,7 @@ class TelegramBotRunner:
         self._app.add_handler(CommandHandler("start", self._cmd_start))
         self._app.add_handler(CommandHandler("menu", self._cmd_start))
         self._app.add_handler(CommandHandler("repair", self._cmd_repair))
+        self._app.add_handler(CommandHandler("reset", self._cmd_reset))
         self._app.add_handler(CommandHandler("enable", self._cmd_enable))
         self._app.add_handler(CommandHandler("disable", self._cmd_disable))
         self._app.add_handler(CommandHandler("toggle", self._cmd_toggle))
@@ -55,7 +56,18 @@ class TelegramBotRunner:
 
         await self._app.initialize()
         await self._app.start()
-        await self._app.updater.start_polling(drop_pending_updates=True)
+        try:
+            await self._app.updater.start_polling(drop_pending_updates=True)
+        except Exception as exc:
+            # Common on Render redeploy: old instance still polling the same token.
+            log_event(
+                logger,
+                logging.ERROR,
+                "telegram_polling_start_failed",
+                error=str(exc),
+                hint="Only one process may poll this bot token",
+            )
+            return
         log_event(logger, logging.INFO, "telegram_bot_started")
 
     async def stop(self) -> None:
@@ -90,6 +102,14 @@ class TelegramBotRunner:
             return
         await update.message.reply_text(
             await admin.repair_tasks(self._settings),
+            parse_mode="Markdown",
+        )
+
+    async def _cmd_reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not await self._require_admin(update):
+            return
+        await update.message.reply_text(
+            await admin.reset_all_tasks(self._settings),
             parse_mode="Markdown",
         )
 
@@ -179,6 +199,12 @@ class TelegramBotRunner:
         if text in ("🔧 Repair Tasks", "Repair Tasks"):
             await update.message.reply_text(
                 await admin.repair_tasks(self._settings),
+                parse_mode="Markdown",
+            )
+            return
+        if text in ("♻️ Reset Tasks", "Reset Tasks"):
+            await update.message.reply_text(
+                await admin.reset_all_tasks(self._settings),
                 parse_mode="Markdown",
             )
             return

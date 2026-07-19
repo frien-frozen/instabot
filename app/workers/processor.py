@@ -45,7 +45,24 @@ class EventWorker:
           return
       self._running = True
       async with self._session_factory() as session:
-          actions = await TaskRepository(session).ensure_defaults()
+          repo = TaskRepository(session)
+          actions = await repo.ensure_defaults()
+          # Drop duplicate reel tasks for the same media (keep newest).
+          by_media: dict[str, list] = {}
+          for task in await repo.list_all():
+              if task.task_type != "reel_engagement":
+                  continue
+              mid = str((task.settings or {}).get("media_id") or "")
+              if not mid:
+                  continue
+              by_media.setdefault(mid, []).append(task)
+          for mid, rows in by_media.items():
+              if len(rows) < 2:
+                  continue
+              rows.sort(key=lambda t: int(t.id or 0), reverse=True)
+              for stale in rows[1:]:
+                  await stale.delete()
+                  actions.append(f"deduped_reel:{mid}:{stale.id}")
           await session.commit()
       self._task = asyncio.create_task(self._loop())
       log_event(

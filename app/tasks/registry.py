@@ -20,7 +20,7 @@ HANDLERS = {
 def match_tasks(event: Event, tasks: list[Task]) -> list[Task]:
     """Return enabled tasks that should handle this event."""
     matched: list[Task] = []
-    reel_matched = False
+    reel_for_media: list[Task] = []
 
     for task in tasks:
         if not task.enabled:
@@ -29,16 +29,21 @@ def match_tasks(event: Event, tasks: list[Task]) -> list[Task]:
             matched.append(task)
         elif task.task_type == TaskType.COMMENT_AUTO_REPLY and event.event_type == EventType.COMMENT:
             matched.append(task)
-        elif task.task_type == TaskType.MENTION_REPLY and event.event_type in (EventType.MENTION, EventType.STORY_MENTION):
+        elif task.task_type == TaskType.MENTION_REPLY and event.event_type in (
+            EventType.MENTION,
+            EventType.STORY_MENTION,
+        ):
             matched.append(task)
         elif task.task_type == TaskType.REEL_ENGAGEMENT and event.event_type == EventType.COMMENT:
             media_id = event.payload.get("media_id")
             task_media = task.settings.get("media_id")
             if media_id and task_media and str(media_id) == str(task_media):
-                matched.append(task)
-                reel_matched = True
+                reel_for_media.append(task)
 
-    if reel_matched:
+    if reel_for_media:
+        # One reel automation per media — prefer highest id (newest).
+        newest = max(reel_for_media, key=lambda t: int(t.id or 0))
         matched = [t for t in matched if t.task_type != TaskType.COMMENT_AUTO_REPLY]
+        matched.append(newest)
 
     return matched

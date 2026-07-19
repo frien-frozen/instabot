@@ -155,3 +155,18 @@ class TaskRepository:
                 if f"enabled:{task_type}" not in actions and f"ai_on:{task_type}" not in actions:
                     actions.append(f"repaired:{task_type}")
         return actions
+
+    async def reset_all_tasks(self) -> dict[str, int]:
+        """
+        Delete every task, then re-seed core DM / comment / mention automations.
+
+        Use after bad reel tasks or a messy task list. Reel automations must be
+        recreated from Telegram afterward.
+        """
+        existing = await self.list_all()
+        deleted = 0
+        for task in existing:
+            await task.delete()
+            deleted += 1
+        created = await self.ensure_defaults()
+        return {"deleted": deleted, "core_actions": len(created)}
