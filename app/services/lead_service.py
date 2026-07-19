@@ -23,6 +23,11 @@ _PHONE_HINT = re.compile(
 
 def conversation_may_contain_lead(text: str) -> bool:
     """Cheap gate: only run Gemini lead extraction when a phone-like token appears."""
+    from app.utils.organ_trade_safety import is_illegal_organ_trade_intent
+
+    # Never create CRM leads from organ-trade attempts.
+    if is_illegal_organ_trade_intent(text or ""):
+        return False
     return bool(_PHONE_HINT.search(text or ""))
 
 

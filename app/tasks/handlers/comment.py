@@ -27,6 +27,12 @@ from app.utils.comment_intent import (
     pick_supportive_reply,
 )
 from app.utils.logging import get_logger, log_event
+from app.utils.organ_trade_safety import (
+    ORGAN_TRADE_REFUSAL_REPLY,
+    REDACTED_ORGAN_TRADE_TEXT,
+    is_illegal_organ_trade_intent,
+    log_illegal_organ_trade_attempt,
+)
 from app.utils.profile_context import format_profile_context
 from app.utils.spam import is_spam
 
@@ -64,6 +70,34 @@ class CommentTaskHandler(BaseTaskHandler):
             log_event(logger, logging.INFO, "spam_skipped", comment_id=data.comment_id, reason=reason)
             return
 
+        media = await self._get_or_fetch_media(ctx, data.media_id)
+        caption = media.caption if media else None
+
+        if is_illegal_organ_trade_intent(data.message, caption=caption):
+            log_illegal_organ_trade_attempt(instagram_user_id=data.from_id)
+            safe = data.model_copy(update={"message": REDACTED_ORGAN_TRADE_TEXT})
+            async with ctx.session_factory() as session:
+                repo = CommentRepository(session)
+                if await repo.has_been_replied(data.comment_id):
+                    return
+                await repo.create(safe)
+                await session.commit()
+            await ig.reply_comment(data.comment_id, ORGAN_TRADE_REFUSAL_REPLY)
+            async with ctx.session_factory() as session:
+                await CommentRepository(session).mark_replied(
+                    data.comment_id,
+                    ORGAN_TRADE_REFUSAL_REPLY,
+                )
+                await session.commit()
+            log_event(
+                logger,
+                logging.INFO,
+                "organ_trade_comment_refusal_sent",
+                comment_id=data.comment_id,
+                media_id=data.media_id,
+            )
+            return
+
         async with ctx.session_factory() as session:
             repo = CommentRepository(session)
             if await repo.has_been_replied(data.comment_id):
@@ -71,7 +105,6 @@ class CommentTaskHandler(BaseTaskHandler):
             await repo.create(data)
             await session.commit()
 
-        media = await self._get_or_fetch_media(ctx, data.media_id)
         campaign = await self._resolve_campaign(ctx, data.message, data.media_id, media)
 
         delay_min = int(cfg.get("delay_min", ctx.settings.reply_delay_min_seconds))

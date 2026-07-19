@@ -15,6 +15,12 @@ from app.services.lead_service import LeadService, conversation_may_contain_lead
 from app.services.message_repository import MessageRepository
 from app.services.pending_reply_repository import PendingReplyRepository
 from app.utils.logging import get_logger, log_duration, log_event
+from app.utils.organ_trade_safety import (
+    ORGAN_TRADE_REFUSAL_REPLY,
+    REDACTED_ORGAN_TRADE_TEXT,
+    is_illegal_organ_trade_intent,
+    log_illegal_organ_trade_attempt,
+)
 from app.utils.profile_context import format_profile_context
 
 logger = get_logger(__name__)
@@ -102,6 +108,49 @@ class MessageProcessor:
                     logging.INFO,
                     "dm_empty_text_ignored",
                     message_id=data.message_id,
+                )
+                return
+
+            # Highest priority: commercial organ trade → fixed refusal, no Gemini, no CRM.
+            if is_illegal_organ_trade_intent(data.text):
+                log_illegal_organ_trade_attempt(instagram_user_id=data.sender_id)
+                reply_text = ORGAN_TRADE_REFUSAL_REPLY
+                result = await self._instagram.send_message(data.sender_id, reply_text)
+                async with self._session_factory() as session:
+                    repo = MessageRepository(session)
+                    conversation = await repo.get_or_create_conversation(
+                        user_id=data.sender_id,
+                        account_id=data.account_id,
+                    )
+                    await repo.store_message(
+                        conversation,
+                        message_id=data.message_id,
+                        sender_id=data.sender_id,
+                        text=REDACTED_ORGAN_TRADE_TEXT,
+                        direction="incoming",
+                        timestamp=MessageRepository.timestamp_from_ms(data.timestamp),
+                    )
+                    outgoing_id = str(
+                        result.get("message_id")
+                        or result.get("id")
+                        or f"out_{data.message_id}"
+                    )
+                    await repo.store_message(
+                        conversation,
+                        message_id=outgoing_id,
+                        sender_id=authenticated_id,
+                        text=reply_text,
+                        direction="outgoing",
+                    )
+                    await repo.mark_reply_sent(data.message_id)
+                    await PendingReplyRepository(session).complete(EVENT_TYPE, data.message_id)
+                    await session.commit()
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "organ_trade_refusal_sent",
+                    message_id=data.message_id,
+                    sender_id=data.sender_id,
                 )
                 return
 

@@ -5,8 +5,11 @@ from __future__ import annotations
 import importlib.metadata
 
 # Stable API aliases — prefer these over version-pinned model IDs.
+# Flash-Lite = cheapest tier that still works well for short Instagram chat.
 GEMINI_FLASH_LITE_LATEST = "gemini-flash-lite-latest"
 GEMINI_FLASH_LATEST = "gemini-flash-latest"
+# Explicit cheap pin (use if "latest" alias is unavailable on the key).
+GEMINI_25_FLASH_LITE = "gemini-2.5-flash-lite"
 
 DEFAULT_GEMINI_MODEL = GEMINI_FLASH_LITE_LATEST
 
@@ -16,6 +19,7 @@ GEMINI_API_VERSION = "v1beta"
 KNOWN_GEMINI_ALIASES = frozenset({
     GEMINI_FLASH_LITE_LATEST,
     GEMINI_FLASH_LATEST,
+    GEMINI_25_FLASH_LITE,
 })
 
 _gemini_ready = False
