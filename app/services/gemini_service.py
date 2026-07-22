@@ -402,18 +402,23 @@ class GeminiService:
             "{\n"
             '  "lead_collected": true|false,\n'
             '  "name": "string or empty",\n'
+            '  "age": "string or empty",\n'
+            '  "marital_status": "Married|Single|empty",\n'
             '  "phone": "string or empty",\n'
             '  "city": "string or empty",\n'
             '  "problem": "short clinical summary",\n'
+            '  "problem_duration": "string or empty",\n'
             '  "category": "Hormonal|Urology|Operation|Monitoring|Unknown",\n'
             '  "service": "Day Consultation|Evening Consultation|Monthly Monitoring|Operation|Online Consultation|Unknown",\n'
-            '  "preferred_date": "string or empty",\n'
+            '  "preferred_date": "Morning|Daytime|Evening|or empty",\n'
             '  "conversation_summary": "2-4 short sentences for the clinic admin"\n'
             "}\n\n"
-            "Set lead_collected=true ONLY when name AND phone AND problem are all present.\n"
+            "Set lead_collected=true ONLY when name AND age AND marital_status AND city "
+            "AND phone AND problem are all present.\n"
             "If anything required is missing, lead_collected=false and still fill what you know.\n"
-            "conversation_summary must be concise for a human admin (Sherzod) — not raw chat.\n"
-            "Do not invent phone numbers or names."
+            "conversation_summary MUST include age, marital status, problem duration, and "
+            "preferred time when known — concise for a human admin (Sherzod), not raw chat.\n"
+            "Do not invent phone numbers, names, age, or other fields."
         )
         user_content = (
             f"Instagram username: {instagram_username or 'unknown'}\n\n"
@@ -436,12 +441,39 @@ class GeminiService:
                 log_event(logger, logging.WARNING, "lead_extract_parse_failed", raw=response.text)
                 return {"lead_collected": False}
 
+            # Fold intake fields the CRM schema does not store as columns into the summary.
+            summary = str(parsed.get("conversation_summary") or "").strip()
+            extras: list[str] = []
+            age = str(parsed.get("age") or "").strip()
+            marital = str(parsed.get("marital_status") or "").strip()
+            duration = str(parsed.get("problem_duration") or "").strip()
+            if age and "age" not in summary.lower() and "yosh" not in summary.lower():
+                extras.append(f"Age: {age}")
+            if marital and "marital" not in summary.lower() and "oilaviy" not in summary.lower():
+                extras.append(f"Marital status: {marital}")
+            if duration and "duration" not in summary.lower() and "davomiylik" not in summary.lower():
+                extras.append(f"Problem duration: {duration}")
+            if extras:
+                parsed["conversation_summary"] = (
+                    f"{summary} {' '.join(extras)}".strip() if summary else " ".join(extras)
+                )
+
+            # Enforce minimum intake before export (conversation policy).
+            required_ok = all(
+                str(parsed.get(key) or "").strip()
+                for key in ("name", "age", "marital_status", "city", "phone", "problem")
+            )
+            parsed["lead_collected"] = bool(parsed.get("lead_collected")) and required_ok
+
             log_event(
                 logger,
                 logging.INFO,
                 "lead_extract_ok",
                 lead_collected=bool(parsed.get("lead_collected")),
                 has_name=bool(parsed.get("name")),
+                has_age=bool(age),
+                has_marital_status=bool(marital),
+                has_city=bool(parsed.get("city")),
                 has_phone=bool(parsed.get("phone")),
                 has_problem=bool(parsed.get("problem")),
             )
