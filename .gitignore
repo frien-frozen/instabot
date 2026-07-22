@@ -33,3 +33,6 @@ htmlcov/
 
 # Docker
 *.log
+
+# Knowledge behavior-edit backups
+knowledge/backups/

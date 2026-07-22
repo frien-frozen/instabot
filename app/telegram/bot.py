@@ -52,6 +52,9 @@ class TelegramBotRunner:
         self._app.add_handler(CommandHandler("disable", self._cmd_disable))
         self._app.add_handler(CommandHandler("toggle", self._cmd_toggle))
         self._app.add_handler(CommandHandler("delete", self._cmd_delete))
+        self._app.add_handler(CommandHandler("behaviour", self._cmd_behaviour))
+        self._app.add_handler(CommandHandler("behavior", self._cmd_behaviour))
+        self._app.add_handler(CommandHandler("cancel", self._cmd_cancel))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._on_message))
 
         await self._app.initialize()
@@ -174,6 +177,28 @@ class TelegramBotRunner:
             await session.commit()
         await update.message.reply_text("Deleted." if ok else "Task not found.")
 
+    async def _cmd_behaviour(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not await self._require_admin(update):
+            return
+        chat_id = update.effective_chat.id
+        admin.set_wizard(chat_id, {"kind": "behaviour", "step": "await_instructions"})
+        await update.message.reply_text(
+            "Send the new behavior instructions in natural language.\n\n"
+            "I will update only behavior files (booking, communication, campaigns, "
+            "sales, behavioral policies) — never pricing or other factual knowledge.\n\n"
+            "Send /cancel to abort."
+        )
+
+    async def _cmd_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not await self._require_admin(update):
+            return
+        chat_id = update.effective_chat.id
+        if admin.get_wizard(chat_id):
+            admin.clear_wizard(chat_id)
+            await update.message.reply_text("Cancelled.")
+        else:
+            await update.message.reply_text("Nothing to cancel.")
+
     async def _on_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.effective_user or not update.message or not update.message.text:
             return
@@ -187,7 +212,10 @@ class TelegramBotRunner:
         wizard = admin.get_wizard(chat_id)
 
         if wizard:
-            await self._handle_wizard_step(update, wizard, text)
+            if wizard.get("kind") == "behaviour":
+                await self._handle_behaviour_step(update, wizard, text)
+            else:
+                await self._handle_wizard_step(update, wizard, text)
             return
 
         if text == "📋 Tasks":
@@ -218,7 +246,7 @@ class TelegramBotRunner:
             await update.message.reply_text("Check server logs for structured event entries.")
             return
         if text == "➕ Create Task":
-            admin.set_wizard(chat_id, {"step": "reel_url"})
+            admin.set_wizard(chat_id, {"kind": "reel", "step": "reel_url"})
             await update.message.reply_text("Send the Reel or Post URL:")
             return
 
@@ -248,6 +276,32 @@ class TelegramBotRunner:
             return
 
         await update.message.reply_text("Use the menu buttons or /start")
+
+    async def _handle_behaviour_step(self, update: Update, wizard: dict, text: str) -> None:
+        chat_id = update.effective_chat.id
+        step = wizard.get("step")
+
+        if step != "await_instructions":
+            admin.clear_wizard(chat_id)
+            await update.message.reply_text("Behavior wizard reset. Send /behaviour to start again.")
+            return
+
+        # Consume the wizard immediately so a second message does not double-apply.
+        admin.clear_wizard(chat_id)
+        await update.message.reply_text("Analyzing and updating behavior files…")
+
+        from app.services.behavior_editor import BehaviorEditor, format_edit_summary
+
+        try:
+            result = await BehaviorEditor(self._settings).apply_instructions(text)
+            summary = format_edit_summary(result)
+            # Telegram hard limit
+            if len(summary) > 4000:
+                summary = summary[:3900] + "\n\n…(truncated)"
+            await update.message.reply_text(summary)
+        except Exception as exc:
+            log_event(logger, logging.ERROR, "behaviour_command_failed", error=str(exc))
+            await update.message.reply_text(f"Failed to update behavior: {exc}")
 
     async def _handle_wizard_step(self, update: Update, wizard: dict, text: str) -> None:
         chat_id = update.effective_chat.id

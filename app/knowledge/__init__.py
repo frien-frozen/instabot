@@ -25,6 +25,11 @@ def loaded_files() -> list[str]:
     return list(_loaded_files)
 
 
+def reload_knowledge() -> str:
+    """Force-reload all knowledge/*.md into the cached system prompt."""
+    return load_knowledge(force=True)
+
+
 def load_knowledge(*, force: bool = False) -> str:
     """
     Load every markdown file from knowledge/ and merge into one system prompt.

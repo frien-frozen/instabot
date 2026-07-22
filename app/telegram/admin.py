@@ -41,6 +41,8 @@ async def build_main_menu_text(settings: Settings) -> str:
         "Commands:",
         "`/enable <id>` · `/disable <id>` · `/toggle <id>`",
         "`/delete <id>` · `/repair` · `/reset`",
+        "`/behaviour` — update assistant behavior (no manual markdown)",
+        "`/cancel` — cancel the current wizard",
     ]
     return "\n".join(lines)
 

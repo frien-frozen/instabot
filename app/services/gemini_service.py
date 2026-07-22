@@ -481,3 +481,140 @@ class GeminiService:
         except Exception as exc:
             log_event(logger, logging.WARNING, "lead_extract_failed", error=str(exc))
             return {"lead_collected": False}
+
+    async def plan_behavior_targets(
+        self,
+        *,
+        instructions: str,
+        current_files: dict[str, str],
+        editable_files: list[str],
+        protected_files: list[str],
+    ) -> dict[str, Any] | None:
+        """
+        Decide which editable behavior files an admin instruction should affect.
+
+        Does not return full rewritten file bodies — only targets + change intents.
+        """
+        editable = ", ".join(editable_files)
+        protected = ", ".join(protected_files)
+        file_blocks: list[str] = []
+        for name in editable_files:
+            body = (current_files.get(name) or "").strip() or "(empty file)"
+            # Keep prompt smaller: truncate very long files for targeting only.
+            if len(body) > 4000:
+                body = body[:4000] + "\n…(truncated for targeting)"
+            file_blocks.append(f"### {name}\n```markdown\n{body}\n```")
+
+        system = (
+            "You analyze admin instructions for a clinic Instagram assistant.\n"
+            "Return ONLY valid JSON (no markdown fences):\n"
+            "{\n"
+            '  "refuse": false,\n'
+            '  "refuse_reason": "",\n'
+            '  "notes": ["optional notes"],\n'
+            '  "targets": [\n'
+            "    {\n"
+            '      "filename": "booking.md",\n'
+            '      "intent": "short merge goal for this file",\n'
+            '      "changes": [\n'
+            '        {"type": "added|removed|updated", "rule": "short description"}\n'
+            "      ]\n"
+            "    }\n"
+            "  ]\n"
+            "}\n\n"
+            f"Editable files ONLY: {editable}\n"
+            f"Protected factual files (never target): {protected}\n"
+            "If the admin asks to change prices, services, doctor bio, website, labs, "
+            "or other factual clinic data, set refuse=true.\n"
+            "policies.md: behavioral policies only; keep medical/safety non-negotiables.\n"
+            "Pick ONLY files that need changes. Do not invent clinic facts."
+        )
+        user_content = (
+            f"Administrator instructions:\n{instructions.strip()}\n\n"
+            "Current editable behavior files:\n\n"
+            + "\n\n".join(file_blocks)
+        )
+
+        response = await self._client.aio.models.generate_content(
+            model=self._model,
+            contents=user_content,
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                temperature=0.2,
+                max_output_tokens=2000,
+            ),
+        )
+        parsed = self._parse_json_object(response.text or "")
+        if not parsed:
+            log_event(
+                logger,
+                logging.WARNING,
+                "behavior_targets_parse_failed",
+                raw=(response.text or "")[:500],
+            )
+            return None
+        log_event(
+            logger,
+            logging.INFO,
+            "behavior_targets_ok",
+            target_count=len(parsed.get("targets") or [])
+            if isinstance(parsed.get("targets"), list)
+            else 0,
+            refuse=bool(parsed.get("refuse")),
+        )
+        return parsed
+
+    async def merge_behavior_file(
+        self,
+        *,
+        instructions: str,
+        filename: str,
+        current_content: str,
+        merge_intent: str,
+    ) -> dict[str, Any] | None:
+        """Intelligently merge admin instructions into one behavior markdown file."""
+        system = (
+            "You merge administrator behavior instructions into ONE markdown knowledge file.\n"
+            "Return ONLY valid JSON (no markdown fences):\n"
+            "{\n"
+            '  "new_content": "FULL merged markdown for this file",\n'
+            '  "changes": [\n'
+            '    {"type": "added|removed|updated", "rule": "short description"}\n'
+            "  ]\n"
+            "}\n\n"
+            "Rules:\n"
+            "- MERGE — do not wipe unrelated existing rules.\n"
+            "- Keep useful headings and structure when possible.\n"
+            "- For policies.md: preserve medical/safety non-negotiables; "
+            "only adjust behavioral policy wording.\n"
+            "- Never add prices, service catalogs, doctor biography, website URLs, "
+            "or laboratory facts.\n"
+            "- new_content must be the complete file after merge."
+        )
+        user_content = (
+            f"File: {filename}\n"
+            f"Merge intent: {merge_intent or '(from instructions)'}\n\n"
+            f"Administrator instructions:\n{instructions.strip()}\n\n"
+            f"Current file contents:\n```markdown\n{(current_content or '').strip() or '(empty)'}\n```"
+        )
+
+        response = await self._client.aio.models.generate_content(
+            model=self._model,
+            contents=user_content,
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                temperature=0.2,
+                max_output_tokens=4096,
+            ),
+        )
+        parsed = self._parse_json_object(response.text or "")
+        if not parsed:
+            log_event(
+                logger,
+                logging.WARNING,
+                "behavior_merge_parse_failed",
+                filename=filename,
+                raw=(response.text or "")[:500],
+            )
+            return None
+        return parsed
