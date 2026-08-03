@@ -182,6 +182,10 @@ class DmTaskHandler(BaseTaskHandler):
         latest_text: str,
     ) -> None:
         combined = f"{memory}\n{latest_text}"
+        # Only extract when THIS message looks like it has a phone — avoids
+        # re-billing extract_lead on every follow-up after a phone appeared once.
+        if not conversation_may_contain_lead(latest_text):
+            return
         if not conversation_may_contain_lead(combined):
             return
 

@@ -312,6 +312,8 @@ class MessageProcessor:
         latest_text: str,
     ) -> None:
         combined = f"{memory}\n{latest_text}"
+        if not conversation_may_contain_lead(latest_text):
+            return
         if not conversation_may_contain_lead(combined):
             return
         try:

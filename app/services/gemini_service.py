@@ -182,7 +182,7 @@ class GeminiService:
             contents=user_content,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
-                temperature=0.9,
+                temperature=0.5,
                 max_output_tokens=max_output_tokens,
             ),
         )
@@ -240,7 +240,8 @@ class GeminiService:
             "gemini_prompt",
             model=self._model,
             comment_text=comment_text,
-            system_prompt=system_prompt,
+            system_prompt_chars=len(system_prompt or ""),
+            user_content_chars=len(user_content),
             has_memory=bool(memory_context),
             memory_turns=len(memory_context.splitlines()) if memory_context else 0,
             has_profile=bool(profile_context),
@@ -248,7 +249,7 @@ class GeminiService:
         )
 
         last_error: GeminiAPIError | None = None
-        for attempt in range(1, 4):
+        for attempt in range(1, 3):  # max 2 attempts — retries multiply spend
             try:
                 reply = await self._generate_with_model(
                     self._model,
@@ -282,7 +283,7 @@ class GeminiService:
                     raise GeminiAPIError(str(exc), model=self._model) from exc
 
                 last_error = GeminiAPIError(str(exc), model=self._model)
-                if attempt < 3:
+                if attempt < 2:
                     wait = 2**attempt
                     log_event(
                         logger,

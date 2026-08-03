@@ -276,7 +276,7 @@ class CommentProcessor:
                     data.message,
                     personality_override=prompt_override,
                     profile_context=profile_context,
-                    memory_context=memory_context,
+                    memory_context=None,
                     post_context=post_context,
                 )
                 await self._instagram.reply_comment(data.comment_id, reply_text)

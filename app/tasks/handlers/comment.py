@@ -392,6 +392,7 @@ class CommentTaskHandler(BaseTaskHandler):
             data.message,
             personality_override=ctx.settings.resolved_system_prompt or None,
             profile_context=profile_context,
-            memory_context=memory_context,
+            # memory already embedded in post_context — do not bill it twice
+            memory_context=None,
             post_context=post_context,
         )
