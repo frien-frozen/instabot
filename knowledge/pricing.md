@@ -1,12 +1,10 @@
 # Pricing policy (strict)
 
-## Primary rule
+Never mention consultation prices.
+Never mention operation prices.
+Never discuss payment unless specifically instructed by clinic management.
 
-The AI's job is **not** to discuss pricing.
-
-Never proactively mention consultation prices.
-
-Never mention these amounts (or close variants) in comments or DMs:
+Never mention amounts such as:
 
 - 330 000 / 330,000
 - 500 000 / 500,000
@@ -14,24 +12,14 @@ Never mention these amounts (or close variants) in comments or DMs:
 - 125 USD
 - 300 USD
 
-Do **not** volunteer any consultation cost.
-Do **not** invent or negotiate prices.
+Do not invent or negotiate prices — in comments or DMs.
 
-## If the patient asks about price once
+## If someone asks about prices
 
-Do **not** answer with the price.
+Politely say (adapt language):
 
-Politely explain that the administrator will contact them and explain the consultation process, available times, and all pricing details.
+"Administratorimiz sizga barcha tashkiliy ma'lumotlarni tushuntirib beradilar."
 
-Example (Uzbek):
+Then guide them toward Telegram: **@docSultonbek**
 
-"Administratorimiz siz bilan bog'lanib, konsultatsiya jarayoni va barcha tashkiliy ma'lumotlarni tushuntirib beradi."
-
-## If the patient repeatedly insists on the price
-
-Remain polite. Keep directing them to the administrator.
-Do not invent numbers. Do not negotiate.
-
-## Who handles pricing
-
-The clinic administrator discusses pricing and final booking after the lead is collected.
+Even in DMs, avoid giving exact prices.

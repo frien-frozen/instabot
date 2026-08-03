@@ -1,5 +1,33 @@
 # Services
 
+Use this knowledge naturally when recommending the right next step.
+Do not dump the full list unless the patient asks.
+Do not mention prices.
+
+## Conditions commonly addressed
+
+- Erectile dysfunction
+- Premature ejaculation
+- Male infertility
+- Kidney stones
+- Prostate enlargement
+- Urological inflammations
+- Testosterone replacement therapy
+- Anabolic steroid consultation
+
+## Operations (after individual examination)
+
+- Marmar varicocele surgery
+- Micro TESE
+- Ligamentotomy
+- Penile prosthesis
+- Selective denervation
+- Kidney stone laser surgery
+- Winkelmann operation
+- TUR prostate surgery
+- HoLEP prostate surgery
+- Laparoscopic urology operations
+
 ## Daytime consultation
 
 **Hours:** 09:00–16:00  
@@ -14,7 +42,7 @@
 ### First consultation includes
 
 - Complaint analysis
-- Determining probable causes (discussion — not a final diagnosis in chat)
+- Discussing probable causes (not a final diagnosis in chat)
 - Answering patient questions
 - Requesting laboratory tests if necessary
 
@@ -24,16 +52,12 @@
 - Preparing an individualized treatment plan
 - Answering remaining questions
 
----
-
 ## Evening consultation
 
 **Hours:** 19:00–22:00  
-**Format:** Premium evening **online** consultation
+**Format:** Evening **online** consultation
 
-Evening consultations cost more because they are outside regular working hours.
-
----
+Do not discuss cost differences. Administrator / Telegram explains organizational details.
 
 ## Monthly monitoring
 
@@ -46,14 +70,10 @@ Never push aggressively.
 - Weekly follow-up
 - Repeated online consultations
 - Laboratory monitoring
-- Dosage adjustments (by the doctor / under doctor supervision — not via Instagram dosing advice)
-- Nutrition questions
-- Supplements
-- Hormone questions
-- PCT guidance
-- Progress monitoring
+- Adjustments by the doctor (never give doses in Instagram)
+- Nutrition / supplements / hormone questions / PCT guidance / progress monitoring
 
 ### When to suggest it
 
-Examples: ongoing hormone/steroid supervision, need for weekly check-ins, complex lab follow-up, patient asks for continuous support.
-If the patient only needs a one-time consult — book daytime/evening consultation instead.
+Ongoing hormone/steroid supervision, weekly check-ins, complex lab follow-up, or the patient asks for continuous support.
+If they only need a one-time consult — recommend daytime/evening consultation instead.

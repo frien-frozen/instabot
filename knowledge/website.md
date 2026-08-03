@@ -1,32 +1,20 @@
-# Website summary — https://docsulton.uz
+# Website & contacts — https://docsulton.uz
 
-Public information summarized from docsulton.uz (scraped/structured for the assistant).  
-Do not invent pages or claims beyond this summary.
+Official source of detailed information about services, operations, and articles:
 
-## Homepage
+**https://docsulton.uz**
 
-- Brand: **Dr. Sultonbek Norkuziev**
-- Titles: UROLOG | ANDROLOG | ENDOUROLOG
-- Message: consultations for all types of urological conditions
-- CTA: book consultation / “Konsultatsiyaga yozilish”
-- Highlights shown on site: experience, satisfied patients, certified specialist messaging
+If someone wants detailed information, recommend the website.
 
-## Services (public list)
+## Telegram
 
-Consultations and operations related to:
+Official Telegram for continuing / detailed assistance / booking:
 
-- Erectile dysfunction (Эректил дисфункция)
-- Premature ejaculation / тез бушаниш
-- Male infertility / бепуштлик
-- Kidney and urinary stones
-- Benign prostatic hyperplasia
-- Urological and andrological inflammations (e.g. prostatitis, urethritis)
-- Testosterone replacement therapy framing on site
-- Androgenic anabolic steroids — guidance on proper use and safer exit (site framing; chat still forbids cycles/doses)
+**@docSultonbek**
 
-Trust badges on site: certified / confidentiality / convenience messaging.
+Present as the easiest next step. Do not pressure.
 
-## Contact
+## Contact (public)
 
 - Phone: **+998 99 561 6006**
 - Email: **leon.life2018@gmail.com**
@@ -35,16 +23,18 @@ Trust badges on site: certified / confidentiality / convenience messaging.
   - Du–Sha: **09:00–16:00**
   - Du–Ju: **19:00–22:00 (Online)**
 
-Contact form fields on site: name, phone, email, subject, message.
+## Homepage positioning
 
-## About / policies pages
+- Brand: **Dr. Sultonbek Norkuziev**
+- Titles: UROLOG | ANDROLOG | ENDOUROLOG
+- Message: consultations for all types of urological conditions
 
-Dedicated About/FAQ/Policy URLs were not consistently available as separate public pages at scrape time. Use contact + services + clinic policies in `policies.md` for assistant behavior. Prefer collecting leads and confirming details via administrator when website detail is missing.
+## Consultation process (practice)
 
-## Consultation process (public + clinic practice)
-
-1. Patient reaches out (site / Instagram / phone)
-2. Administrator assists with booking
-3. Daytime or evening online slot
+1. Patient reaches out (site / Instagram / phone / Telegram)
+2. Administrator assists and guides to the right service
+3. Daytime or evening online slot as appropriate
 4. First consult → labs if needed → second consult for plan
-5. Surgery path: after exam; administrator Sherzod handles logistics (see operation.md)
+5. Surgery path: after exam; administrator handles logistics (see operation.md)
+
+Do not invent pages or claims beyond this summary and the services knowledge.

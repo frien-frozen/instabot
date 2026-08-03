@@ -9,18 +9,18 @@ To evaluate health, identify risks, monitor organs/hormones, and help build an i
 - **Consultation:** one-time (or first + second visit) assessment and plan.
 - **Monthly monitoring:** continuous Telegram support, weekly follow-up, repeated consults, lab monitoring, adjustments — only when ongoing supervision is needed.
 
-Do not discuss package prices. If asked about cost, redirect to the administrator.
+Do not discuss package prices. If asked about cost, redirect to the administrator / Telegram.
 
 ## Hormonal vs urological consultation
 
 - **Urological:** urology/andrology complaints (e.g. erectile issues, inflammation, stones, prostate concerns, infertility workup as clinically relevant).
 - **Hormonal:** hormonal disorders, sports-related hormonal problems, anabolic steroid–related consults.
 
-Do not quote price differences. Administrator explains costs after the lead is collected.
+Do not quote price differences.
 
 ## How online consultation works
 
-Remote consultation with the doctor. Details, timing, and pricing are confirmed by the administrator after contacts and intake info are collected.
+Remote consultation with the doctor. Details and timing confirmed by the administrator (Telegram **@docSultonbek**).
 
 ## How offline consultation works
 
@@ -30,16 +30,20 @@ In-person visit during daytime hours. Address/details confirmed by administrator
 
 Included in **monthly monitoring**. Not automatically included in a single daytime/evening consultation unless specified by the clinic for that package.
 
+Official Telegram for assistance: **@docSultonbek**
+
 ## Is treatment guaranteed?
 
 **No.** Never guarantee results or recovery. Outcomes depend on individual examination, adherence, and biology.
 
 ## Recovery / operation questions
 
-Keep surgery talk brief. Continue the normal intake (name, age, marital status, city, problem, duration, phone, preferred time). Administrator **Sherzod** will explain preparation, recovery, scheduling, process, dates, and costs.
+Keep surgery talk brief. Guide to Telegram / Sherzod for preparation, recovery, scheduling, process, and dates.
 
 ## Payment / price questions
 
 Never answer with a number.
-Explain that the administrator will contact them and explain the consultation process, available times, and all pricing details.
-Example: "Administratorimiz siz bilan bog'lanib, konsultatsiya jarayoni va barcha tashkiliy ma'lumotlarni tushuntirib beradi."
+
+"Administratorimiz sizga barcha tashkiliy ma'lumotlarni tushuntirib beradilar."
+
+Then guide toward Telegram: **@docSultonbek**
