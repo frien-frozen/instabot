@@ -156,18 +156,25 @@ def _message_from_payload(
     if is_echo:
         return None
 
-    text = message.get("text")
-    if not text or not str(text).strip():
+    text = str(message.get("text") or "").strip()
+    attachment_types: list[str] = []
+    for item in message.get("attachments") or []:
+        if isinstance(item, dict) and item.get("type"):
+            attachment_types.append(str(item["type"]).strip().lower())
+    unsupported_media = bool(attachment_types) and not text
+    if not text and not attachment_types:
         return None
 
     return MessageCreate(
         message_id=str(message_id),
         sender_id=str(sender.get("id", "")),
         recipient_id=str(recipient.get("id", "")) if isinstance(recipient, dict) else "",
-        text=str(text),
+        text=text or f"[unsupported:{','.join(attachment_types)}]",
         timestamp=_parse_message_timestamp(timestamp),
         account_id=account_id,
         is_echo=is_echo,
+        unsupported_media=unsupported_media,
+        attachment_types=attachment_types,
     )
 
 

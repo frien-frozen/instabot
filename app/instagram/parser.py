@@ -149,9 +149,14 @@ class WebhookParser:
             return None
         if message.get("is_echo"):
             return None
-        text = message.get("text")
-        if not text or not str(text).strip():
+
+        text = str(message.get("text") or "").strip()
+        attachment_types = self._attachment_types(message)
+        unsupported_media = bool(attachment_types) and not text
+        # Attachment-only (voice/image/video/sticker) — still enqueue for a fixed reply.
+        if not text and not attachment_types:
             return None
+
         sender_id = str(sender.get("id", ""))
         return ParsedEvent(
             event_type=EventType.DM,
@@ -162,12 +167,29 @@ class WebhookParser:
                 "message_id": str(message_id),
                 "sender_id": sender_id,
                 "recipient_id": str(recipient.get("id", "")) if isinstance(recipient, dict) else "",
-                "text": str(text),
+                "text": text or f"[unsupported:{','.join(attachment_types)}]",
                 "timestamp": self._parse_timestamp(timestamp),
                 "account_id": account_id,
                 "is_echo": False,
+                "unsupported_media": unsupported_media,
+                "attachment_types": attachment_types,
             },
         )
+
+    @staticmethod
+    def _attachment_types(message: dict[str, Any]) -> list[str]:
+        """Collect Instagram DM attachment types (audio/image/video/sticker/…)."""
+        raw = message.get("attachments")
+        if not isinstance(raw, list):
+            return []
+        types: list[str] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            kind = str(item.get("type") or "").strip().lower()
+            if kind:
+                types.append(kind)
+        return types
 
     def _story_mention_event(self, event: dict[str, Any]) -> ParsedEvent | None:
         referral = event.get("referral")

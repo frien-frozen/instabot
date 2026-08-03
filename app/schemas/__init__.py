@@ -86,10 +86,13 @@ class MessageCreate(BaseModel):
     message_id: str
     sender_id: str
     recipient_id: str
-    text: str
+    text: str = ""
     timestamp: Optional[int] = None
     account_id: Optional[str] = None
     is_echo: bool = False
+    # True when webhook had voice/image/video/sticker/etc. and little/no text.
+    unsupported_media: bool = False
+    attachment_types: List[str] = Field(default_factory=list)
 
 
 class MentionCreate(BaseModel):
