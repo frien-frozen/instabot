@@ -44,13 +44,24 @@ class MessageRepository:
         username: str | None = None,
     ) -> Conversation:
         """Find or create a conversation thread for an Instagram user."""
+        conversation: Conversation | None = None
         if account_id:
             conversation = await Conversation.find_one(
                 Conversation.user_id == user_id,
                 Conversation.account_id == account_id,
             )
-        else:
+
+        # Reuse any existing thread for this user so DM history is not split
+        # when account_id is sometimes missing from the webhook payload.
+        if conversation is None:
             conversation = await Conversation.find_one(Conversation.user_id == user_id)
+            if (
+                conversation is not None
+                and account_id
+                and not conversation.account_id
+            ):
+                conversation.account_id = account_id
+                await conversation.save()
 
         if conversation is None:
             conversation = Conversation(

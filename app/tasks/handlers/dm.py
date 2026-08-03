@@ -113,6 +113,15 @@ class DmTaskHandler(BaseTaskHandler):
             await session.commit()
             conversation_id = conversation.id
             username = conversation.username
+            log_event(
+                logger,
+                logging.INFO,
+                "dm_memory_loaded",
+                conversation_id=conversation_id,
+                memory_chars=len(memory),
+                memory_turns=len(memory.splitlines()) if memory else 0,
+                has_memory=bool(memory.strip()),
+            )
 
         # Default off for chat traffic — profile fetch often 500s and adds latency.
         if cfg.get("profile_context_enabled", False):

@@ -241,12 +241,24 @@ class GeminiService:
             blocks.append(post_context)
         if profile_context:
             blocks.append(f"About the person you're talking to:\n{profile_context}")
-        if memory_context:
-            blocks.append(f"Conversation so far:\n{memory_context}")
+        if memory_context and memory_context.strip():
+            blocks.append(
+                "ONGOING CONVERSATION — you already talked to this person.\n"
+                "Do NOT greet again. Do NOT re-introduce yourself. "
+                "Do NOT say you are the administrator again. "
+                "Continue naturally from this history:\n"
+                f"{memory_context.strip()}"
+            )
+        else:
+            blocks.append(
+                "NEW CONVERSATION — no prior history. "
+                "Introduce yourself briefly once, then help."
+            )
         blocks.append(f"Latest user message:\n{comment_text}")
         blocks.append(
             "Reply rules for THIS message: max 2 short sentences, one idea only, "
-            "no paragraphs or sales stories. Chat like Instagram, not an article."
+            "no paragraphs or sales stories. Chat like Instagram, not an article. "
+            "If history exists above, never restart with a greeting or introduction."
         )
         user_content = "\n\n".join(blocks)
 
