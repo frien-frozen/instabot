@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from pymongo import ASCENDING, ReturnDocument
+from pymongo import ASCENDING, DESCENDING, ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from app.database import MongoSession, next_id
@@ -55,7 +55,7 @@ class EventRepository:
                     ],
                 },
                 {"$set": {"status": EventStatus.PROCESSING}},
-                sort=[("created_at", ASCENDING)],
+                sort=[("created_at", DESCENDING)],
                 return_document=ReturnDocument.AFTER,
             )
             if doc is None:
@@ -73,18 +73,46 @@ class EventRepository:
         event.last_error = None
         await event.save()
 
-    async def mark_failed(self, event: Event, error: str) -> None:
+    async def mark_failed(
+        self,
+        event: Event,
+        error: str,
+        *,
+        permanent: bool = False,
+    ) -> None:
         event.attempts += 1
         event.last_error = error[:4000]
-        if event.attempts >= MAX_ATTEMPTS:
+        if permanent or event.attempts >= MAX_ATTEMPTS:
             event.status = EventStatus.FAILED
             event.processed_at = datetime.now(timezone.utc)
+            event.next_retry_at = None
         else:
             delay = RETRY_DELAYS_SECONDS[min(event.attempts - 1, len(RETRY_DELAYS_SECONDS) - 1)]
             event.status = EventStatus.PENDING
             event.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
         await event.save()
 
+    async def fail_stale_pending(self, *, older_than_hours: float = 20.0) -> int:
+        """
+        Permanently fail old pending/retry events so they stop burning Gemini.
+
+        Instagram DM replies older than ~24h hit "outside of allowed window".
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=older_than_hours)
+        result = await Event.find(
+            Event.status == EventStatus.PENDING,
+            Event.created_at < cutoff,
+        ).update(
+            {
+                "$set": {
+                    "status": EventStatus.FAILED,
+                    "last_error": "stale_event_skipped_outside_messaging_window",
+                    "processed_at": datetime.now(timezone.utc),
+                    "next_retry_at": None,
+                }
+            }
+        )
+        return int(getattr(result, "modified_count", 0) or 0)
     async def release_stuck(self, *, older_than_minutes: int = 10) -> int:
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=older_than_minutes)
         result = await Event.find(

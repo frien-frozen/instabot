@@ -92,6 +92,25 @@ class GeminiService:
             api_endpoint=self.api_endpoint,
         )
 
+    @staticmethod
+    def _gen_config(
+        *,
+        system_instruction: str | None = None,
+        temperature: float = 0.5,
+        max_output_tokens: int = 100,
+    ) -> types.GenerateContentConfig:
+        """Build generation config with AFC disabled (avoids 10 remote-call loops)."""
+        kwargs: dict[str, Any] = {
+            "temperature": temperature,
+            "max_output_tokens": max_output_tokens,
+            "automatic_function_calling": types.AutomaticFunctionCallingConfig(
+                disable=True
+            ),
+        }
+        if system_instruction is not None:
+            kwargs["system_instruction"] = system_instruction
+        return types.GenerateContentConfig(**kwargs)
+
     async def validate_model(self) -> str | None:
         """
         Verify the configured model with a minimal test prompt.
@@ -105,10 +124,7 @@ class GeminiService:
                 response = await self._client.aio.models.generate_content(
                     model=self._model,
                     contents="Reply with exactly: ok",
-                    config=types.GenerateContentConfig(
-                        max_output_tokens=10,
-                        temperature=0,
-                    ),
+                    config=self._gen_config(max_output_tokens=10, temperature=0),
                 )
                 reply = (response.text or "").strip()
                 if not reply:
@@ -180,7 +196,7 @@ class GeminiService:
         response = await self._client.aio.models.generate_content(
             model=model,
             contents=user_content,
-            config=types.GenerateContentConfig(
+            config=self._gen_config(
                 system_instruction=system_prompt,
                 temperature=0.5,
                 max_output_tokens=max_output_tokens,
@@ -356,7 +372,7 @@ class GeminiService:
             response = await self._client.aio.models.generate_content(
                 model=self._model,
                 contents="\n\n".join(blocks),
-                config=types.GenerateContentConfig(
+                config=self._gen_config(
                     system_instruction=system,
                     temperature=0.1,
                     max_output_tokens=40,
@@ -429,7 +445,7 @@ class GeminiService:
             response = await self._client.aio.models.generate_content(
                 model=self._model,
                 contents=user_content,
-                config=types.GenerateContentConfig(
+                config=self._gen_config(
                     system_instruction=system,
                     temperature=0.1,
                     max_output_tokens=350,
@@ -533,7 +549,7 @@ class GeminiService:
         response = await self._client.aio.models.generate_content(
             model=self._model,
             contents=user_content,
-            config=types.GenerateContentConfig(
+            config=self._gen_config(
                 system_instruction=system,
                 temperature=0.2,
                 max_output_tokens=2000,
@@ -596,7 +612,7 @@ class GeminiService:
         response = await self._client.aio.models.generate_content(
             model=self._model,
             contents=user_content,
-            config=types.GenerateContentConfig(
+            config=self._gen_config(
                 system_instruction=system,
                 temperature=0.2,
                 max_output_tokens=4096,

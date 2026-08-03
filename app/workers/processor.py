@@ -5,18 +5,22 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime, timezone
 
 from app.config import Settings
 from app.database import SessionFactory
 from app.repositories.event_repository import EventRepository
 from app.repositories.task_repository import TaskRepository
 from app.services.gemini_service import GeminiService
-from app.services.instagram_service import InstagramService
+from app.services.instagram_service import InstagramService, is_permanent_instagram_error
 from app.tasks.handlers.base import HandlerContext
 from app.tasks.registry import HANDLERS, match_tasks
 from app.utils.logging import get_logger, log_event
 
 logger = get_logger(__name__)
+
+# Instagram human-agent messaging window is 24h; skip Gemini before that burns money.
+_DM_WINDOW_SECONDS = 20 * 60 * 60
 
 
 class EventWorker:
@@ -63,6 +67,7 @@ class EventWorker:
               for stale in rows[1:]:
                   await stale.delete()
                   actions.append(f"deduped_reel:{mid}:{stale.id}")
+          stale_failed = await EventRepository(session).fail_stale_pending(older_than_hours=20)
           await session.commit()
       self._task = asyncio.create_task(self._loop())
       log_event(
@@ -70,6 +75,7 @@ class EventWorker:
           logging.INFO,
           "event_worker_started",
           task_defaults=actions or ["ok"],
+          stale_events_failed=stale_failed,
       )
 
   async def stop(self) -> None:
@@ -108,6 +114,25 @@ class EventWorker:
       for event in events:
           started = time.monotonic()
           try:
+              if self._is_stale_dm_event(event):
+                  async with self._session_factory() as session:
+                      repo = EventRepository(session)
+                      db_event = await repo.get(event.id)
+                      if db_event:
+                          await repo.mark_failed(
+                              db_event,
+                              "stale_dm_outside_messaging_window",
+                              permanent=True,
+                          )
+                      await session.commit()
+                  log_event(
+                      logger,
+                      logging.INFO,
+                      "event_skipped_stale_dm",
+                      event_id=event.event_id,
+                  )
+                  continue
+
               matched = match_tasks(event, tasks)
               if not matched:
                   async with self._session_factory() as session:
@@ -145,11 +170,12 @@ class EventWorker:
               )
               count += 1
           except Exception as exc:
+              permanent = is_permanent_instagram_error(exc)
               async with self._session_factory() as session:
                   repo = EventRepository(session)
                   db_event = await repo.get(event.id)
                   if db_event:
-                      await repo.mark_failed(db_event, str(exc))
+                      await repo.mark_failed(db_event, str(exc), permanent=permanent)
                   await session.commit()
               log_event(
                   logger,
@@ -159,6 +185,27 @@ class EventWorker:
                   task_id=event.task_id,
                   error=str(exc),
                   attempts=event.attempts,
+                  permanent=permanent,
                   execution_ms=int((time.monotonic() - started) * 1000),
               )
       return count
+
+  @staticmethod
+  def _is_stale_dm_event(event) -> bool:
+      if event.event_type != "dm":
+          return False
+      payload = event.payload or {}
+      ts = payload.get("timestamp")
+      try:
+          ts_ms = int(ts) if ts is not None else 0
+      except (TypeError, ValueError):
+          ts_ms = 0
+      if ts_ms <= 0:
+          # Fall back to queue age.
+          created = getattr(event, "created_at", None)
+          if created is None:
+              return False
+          age = datetime.now(timezone.utc) - created
+          return age.total_seconds() > _DM_WINDOW_SECONDS
+      age_s = time.time() - (ts_ms / 1000.0)
+      return age_s > _DM_WINDOW_SECONDS

@@ -25,18 +25,51 @@ def _redact_url(url: str) -> str:
 class InstagramAPIError(Exception):
     """Raised when the Instagram Graph API returns an error."""
 
+    # Permanent Graph errors — never retry these (burns Gemini + delays fresh mail).
+    PERMANENT_ERROR_CODES = frozenset({
+        10,   # permission / messaging window
+        100,  # unsupported / object missing
+        190,  # invalid OAuth token
+        200,  # permission
+        230,  # user consent required
+    })
+    PERMANENT_SUBCODES = frozenset({
+        33,       # object does not exist / missing permissions
+        2534022,  # outside messaging window
+    })
+
     def __init__(
         self,
         message: str,
         *,
         status_code: int | None = None,
         error_code: int | None = None,
+        error_subcode: int | None = None,
         response_body: dict[str, Any] | str | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.error_code = error_code
+        self.error_subcode = error_subcode
         self.response_body = response_body
+
+    @property
+    def is_permanent(self) -> bool:
+        if self.error_subcode in self.PERMANENT_SUBCODES:
+            return True
+        if self.error_code in self.PERMANENT_ERROR_CODES:
+            return True
+        text = str(self).lower()
+        return (
+            "outside of allowed window" in text
+            or "user consent is required" in text
+            or "does not exist" in text
+            or "missing permissions" in text
+        )
+
+
+def is_permanent_instagram_error(exc: BaseException) -> bool:
+    return isinstance(exc, InstagramAPIError) and exc.is_permanent
 
 
 class InstagramService:
@@ -86,18 +119,21 @@ class InstagramService:
             error_body = response.text
 
         error_code: int | None = None
+        error_subcode: int | None = None
         error_message = f"Instagram API error (HTTP {response.status_code})"
 
         if isinstance(error_body, dict):
             error_obj = error_body.get("error", {})
             if isinstance(error_obj, dict):
                 error_code = error_obj.get("code")
+                error_subcode = error_obj.get("error_subcode")
                 error_message = error_obj.get("message", error_message)
 
         raise InstagramAPIError(
             error_message,
             status_code=response.status_code,
             error_code=error_code,
+            error_subcode=error_subcode,
             response_body=error_body,
         )
 
@@ -128,10 +164,13 @@ class InstagramService:
 
                 except InstagramAPIError as exc:
                     last_error = exc
-                    if (
-                        exc.status_code not in self.RETRYABLE_STATUS_CODES
-                        or attempt == self._max_retries
-                    ):
+                    # Permanent Graph errors often arrive as HTTP 500 — never retry them.
+                    retryable = (
+                        not exc.is_permanent
+                        and exc.status_code in self.RETRYABLE_STATUS_CODES
+                        and attempt < self._max_retries
+                    )
+                    if not retryable:
                         log_event(
                             logger,
                             logging.ERROR,
@@ -139,7 +178,9 @@ class InstagramService:
                             attempt=attempt,
                             status_code=exc.status_code,
                             error_code=exc.error_code,
+                            error_subcode=exc.error_subcode,
                             error_detail=str(exc),
+                            permanent=exc.is_permanent,
                         )
                         raise
 
