@@ -234,7 +234,7 @@ class GeminiService:
         Returns:
             Generated reply text, stripped of surrounding whitespace.
         """
-        system_prompt = get_system_prompt(override=personality_override)
+        system_prompt = get_system_prompt(override=personality_override, chat=True)
 
         blocks: list[str] = []
         if post_context:

@@ -114,12 +114,14 @@ class DmTaskHandler(BaseTaskHandler):
             conversation_id = conversation.id
             username = conversation.username
 
-        profile_context = None
-        profile_username = username
-        if cfg.get("profile_context_enabled", ctx.settings.profile_context_enabled):
+        # Default off for chat traffic — profile fetch often 500s and adds latency.
+        if cfg.get("profile_context_enabled", False):
             profile = await ig.fetch_user_profile(recipient)
             profile_context = format_profile_context(profile) or None
             profile_username = str(profile.get("username") or username or "") or username
+        else:
+            profile_context = None
+            profile_username = username
 
         prompt = ctx.settings.resolved_system_prompt or None
         reply_text = await ctx.gemini.generate_reply(

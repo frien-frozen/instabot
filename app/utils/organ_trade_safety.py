@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 
@@ -132,12 +133,11 @@ def is_illegal_organ_trade_intent(text: str, *, caption: str | None = None) -> b
             return True
 
     if _BARE_PRICE_PING.match(raw) and not _MEDICAL_SAFE.search(raw):
+        # Only under an organ-trade caption. Never in DMs (caption=None) —
+        # otherwise "Pul" / "narxi qancha" falsely blocks real patients.
         if caption and _CAPTION_ORGAN_PRICE_TOPIC.search(caption):
             return True
-        if caption is None:
-            return True
-        # Short buyer pings under any organ-topic caption
-        if re.search(r"(?i)^\s*(?:kim\s*oladi|ким\s*олади)\s*\??\s*$", raw):
+        if caption and re.search(r"(?i)^\s*(?:kim\s*oladi|ким\s*олади)\s*\??\s*$", raw):
             return True
 
     return False

@@ -13,7 +13,21 @@ logger = get_logger(__name__)
 KNOWLEDGE_DIR = Path(__file__).resolve().parents[2] / "knowledge"
 
 _PROMPT_FILE = "prompt.md"
+
+# Slim set for live Instagram chat — full knowledge is ~20k chars and burns credits.
+_CHAT_KNOWLEDGE_FILES: tuple[str, ...] = (
+    "prompt.md",
+    "booking.md",
+    "sales.md",
+    "communication.md",
+    "pricing.md",
+    "policies.md",
+    "website.md",
+    "services.md",
+)
+
 _cached_prompt: str | None = None
+_cached_chat_prompt: str | None = None
 _loaded_files: list[str] = []
 
 
@@ -26,8 +40,29 @@ def loaded_files() -> list[str]:
 
 
 def reload_knowledge() -> str:
-    """Force-reload all knowledge/*.md into the cached system prompt."""
+    """Force-reload all knowledge/*.md into the cached system prompts."""
+    global _cached_chat_prompt
+    _cached_chat_prompt = None
     return load_knowledge(force=True)
+
+
+def _merge_files(filenames: list[str]) -> tuple[str, list[str]]:
+    parts: list[str] = []
+    files: list[str] = []
+    for name in filenames:
+        path = KNOWLEDGE_DIR / name
+        if not path.is_file():
+            continue
+        body = path.read_text(encoding="utf-8").strip()
+        if not body:
+            continue
+        if name == _PROMPT_FILE:
+            parts.append(body)
+        else:
+            title = path.stem.replace("_", " ").upper()
+            parts.append(f"## {title}\n\n{body}")
+        files.append(name)
+    return "\n\n".join(parts).strip(), files
 
 
 def load_knowledge(*, force: bool = False) -> str:
@@ -38,7 +73,7 @@ def load_knowledge(*, force: bool = False) -> str:
     All other *.md files are appended as knowledge sections (sorted by name).
     New files are picked up automatically on the next load/startup.
     """
-    global _cached_prompt, _loaded_files
+    global _cached_prompt, _cached_chat_prompt, _loaded_files
 
     if _cached_prompt is not None and not force:
         return _cached_prompt
@@ -51,35 +86,18 @@ def load_knowledge(*, force: bool = False) -> str:
             path=str(KNOWLEDGE_DIR),
         )
         _cached_prompt = ""
+        _cached_chat_prompt = ""
         _loaded_files = []
         return _cached_prompt
 
     prompt_path = KNOWLEDGE_DIR / _PROMPT_FILE
     other_files = sorted(
-        p for p in KNOWLEDGE_DIR.glob("*.md") if p.name != _PROMPT_FILE
+        p.name for p in KNOWLEDGE_DIR.glob("*.md") if p.name != _PROMPT_FILE
     )
-
-    parts: list[str] = []
-    files: list[str] = []
-
-    if prompt_path.is_file():
-        parts.append(prompt_path.read_text(encoding="utf-8").strip())
-        files.append(prompt_path.name)
-    else:
-        log_event(logger, logging.WARNING, "knowledge_prompt_missing", path=str(prompt_path))
-
-    if other_files:
-        parts.append("# CLINIC KNOWLEDGE BASE")
-        for path in other_files:
-            body = path.read_text(encoding="utf-8").strip()
-            if not body:
-                continue
-            title = path.stem.replace("_", " ").upper()
-            parts.append(f"## {title}\n\n{body}")
-            files.append(path.name)
-
-    _cached_prompt = "\n\n".join(parts).strip()
+    ordered = ([_PROMPT_FILE] if prompt_path.is_file() else []) + other_files
+    _cached_prompt, files = _merge_files(ordered)
     _loaded_files = files
+    _cached_chat_prompt = None  # rebuild on next chat load
 
     # Keep legacy gemini_service aliases in sync for importers.
     try:
@@ -102,32 +120,58 @@ def load_knowledge(*, force: bool = False) -> str:
     return _cached_prompt
 
 
-def get_system_prompt(*, override: str | None = None) -> str:
+def load_chat_knowledge(*, force: bool = False) -> str:
+    """Slim knowledge pack for live DM/comment replies (cheaper than full merge)."""
+    global _cached_chat_prompt
+
+    if _cached_chat_prompt is not None and not force:
+        return _cached_chat_prompt
+
+    if not KNOWLEDGE_DIR.is_dir():
+        _cached_chat_prompt = load_knowledge(force=force)
+        return _cached_chat_prompt
+
+    merged, files = _merge_files(list(_CHAT_KNOWLEDGE_FILES))
+    _cached_chat_prompt = merged
+    log_event(
+        logger,
+        logging.INFO,
+        "chat_knowledge_loaded",
+        files=files,
+        file_count=len(files),
+        chars=len(_cached_chat_prompt),
+    )
+    return _cached_chat_prompt
+
+
+def get_system_prompt(*, override: str | None = None, chat: bool = True) -> str:
     """
     System prompt for Gemini.
 
-    If override (e.g. SYSTEM_PROMPT env) is set, use it as the core and still
-    append knowledge-base markdown (excluding prompt.md) so clinic facts remain.
-    Otherwise use the full merged knowledge load (prompt.md + all docs).
+    chat=True (default for Instagram replies): slim knowledge set.
+    chat=False: full knowledge base (admin / tools).
     """
-    knowledge = load_knowledge()
+    knowledge = load_chat_knowledge() if chat else load_knowledge()
     core = (override or "").strip()
     if not core:
         return knowledge
 
-    # Env override replaces prompt.md personality only; keep clinic docs.
-    prompt_path = KNOWLEDGE_DIR / _PROMPT_FILE
-    other_files = sorted(
-        p for p in KNOWLEDGE_DIR.glob("*.md") if p.name != _PROMPT_FILE and p.is_file()
+    # Env override replaces prompt.md personality; keep the same knowledge slice.
+    names = (
+        [n for n in _CHAT_KNOWLEDGE_FILES if n != _PROMPT_FILE]
+        if chat
+        else sorted(
+            p.name for p in KNOWLEDGE_DIR.glob("*.md") if p.name != _PROMPT_FILE
+        )
     )
     parts = [core, "# CLINIC KNOWLEDGE BASE"]
-    for path in other_files:
+    for name in names:
+        path = KNOWLEDGE_DIR / name
+        if not path.is_file():
+            continue
         body = path.read_text(encoding="utf-8").strip()
         if not body:
             continue
         title = path.stem.replace("_", " ").upper()
         parts.append(f"## {title}\n\n{body}")
-    if prompt_path.is_file() and len(other_files) == 0:
-        # Fallback: at least return override + full cache
-        return f"{core}\n\n{knowledge}"
     return "\n\n".join(parts).strip()

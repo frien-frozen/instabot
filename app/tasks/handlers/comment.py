@@ -46,6 +46,10 @@ class CommentTaskHandler(BaseTaskHandler):
         ig = ctx.instagram
         auth_id = await ig.get_authenticated_user_id()
 
+        # Skip own comments before Graph fetch when from_id is already known.
+        if cfg.get("ignore_own_comments", True) and data.from_id and data.from_id == auth_id:
+            return
+
         try:
             details = await ig.fetch_comment_details(data.comment_id)
             from_obj = details.get("from") or {}
