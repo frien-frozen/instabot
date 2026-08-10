@@ -54,6 +54,9 @@ class TelegramBotRunner:
         self._app.add_handler(CommandHandler("delete", self._cmd_delete))
         self._app.add_handler(CommandHandler("behaviour", self._cmd_behaviour))
         self._app.add_handler(CommandHandler("behavior", self._cmd_behaviour))
+        self._app.add_handler(CommandHandler("mute_post", self._cmd_mute_post))
+        self._app.add_handler(CommandHandler("unmute_post", self._cmd_unmute_post))
+        self._app.add_handler(CommandHandler("muted_posts", self._cmd_muted_posts))
         self._app.add_handler(CommandHandler("cancel", self._cmd_cancel))
         self._app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._on_message))
 
@@ -177,6 +180,42 @@ class TelegramBotRunner:
             await session.commit()
         await update.message.reply_text("Deleted." if ok else "Task not found.")
 
+    async def _cmd_mute_post(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not await self._require_admin(update):
+            return
+        if not context.args:
+            await update.message.reply_text(
+                "Usage: /mute_post <instagram_url_or_media_id>\n"
+                "Or tap 🔇 Mute Post and send the URL."
+            )
+            return
+        await update.message.reply_text(
+            await admin.mute_post(self._settings, " ".join(context.args)),
+            parse_mode="Markdown",
+        )
+
+    async def _cmd_unmute_post(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not await self._require_admin(update):
+            return
+        if not context.args:
+            await update.message.reply_text(
+                "Usage: /unmute_post <instagram_url_or_media_id>\n"
+                "Or tap 🔊 Unmute Post and send the URL/id."
+            )
+            return
+        await update.message.reply_text(
+            await admin.unmute_post(self._settings, " ".join(context.args)),
+            parse_mode="Markdown",
+        )
+
+    async def _cmd_muted_posts(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not await self._require_admin(update):
+            return
+        await update.message.reply_text(
+            await admin.list_muted_posts(self._settings),
+            parse_mode="Markdown",
+        )
+
     async def _cmd_behaviour(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not await self._require_admin(update):
             return
@@ -214,6 +253,8 @@ class TelegramBotRunner:
         if wizard:
             if wizard.get("kind") == "behaviour":
                 await self._handle_behaviour_step(update, wizard, text)
+            elif wizard.get("kind") in ("mute_post", "unmute_post"):
+                await self._handle_mute_step(update, wizard, text)
             else:
                 await self._handle_wizard_step(update, wizard, text)
             return
@@ -221,6 +262,23 @@ class TelegramBotRunner:
         if text == "📋 Tasks":
             await update.message.reply_text(
                 await admin.list_tasks_text(self._settings),
+                parse_mode="Markdown",
+            )
+            return
+        if text in ("🔇 Mute Post", "Mute Post"):
+            admin.set_wizard(chat_id, {"kind": "mute_post", "step": "await_ref"})
+            await update.message.reply_text(
+                "Send the Instagram post/reel URL (or media id) to mute comment replies.\n"
+                "Send /cancel to abort."
+            )
+            return
+        if text in ("🔊 Unmute Post", "Unmute Post"):
+            admin.set_wizard(chat_id, {"kind": "unmute_post", "step": "await_ref"})
+            muted = await admin.list_muted_posts(self._settings)
+            await update.message.reply_text(
+                f"{muted}\n\n"
+                "Send the Instagram post/reel URL (or media id) to unmute.\n"
+                "Send /cancel to abort.",
                 parse_mode="Markdown",
             )
             return
@@ -276,6 +334,16 @@ class TelegramBotRunner:
             return
 
         await update.message.reply_text("Use the menu buttons or /start")
+
+    async def _handle_mute_step(self, update: Update, wizard: dict, text: str) -> None:
+        chat_id = update.effective_chat.id
+        kind = wizard.get("kind")
+        admin.clear_wizard(chat_id)
+        if kind == "mute_post":
+            msg = await admin.mute_post(self._settings, text)
+        else:
+            msg = await admin.unmute_post(self._settings, text)
+        await update.message.reply_text(msg, parse_mode="Markdown")
 
     async def _handle_behaviour_step(self, update: Update, wizard: dict, text: str) -> None:
         chat_id = update.effective_chat.id

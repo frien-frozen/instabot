@@ -6,7 +6,8 @@ import logging
 import re
 
 from app.models.event import Event
-from app.models.task import Task
+from app.models.task import Task, TaskType
+from app.repositories.task_repository import TaskRepository
 from app.schemas import CommentCreate
 from app.services.comment_repository import CommentRepository
 from app.tasks.handlers.base import BaseTaskHandler, HandlerContext
@@ -61,6 +62,18 @@ class ReelEngagementHandler(BaseTaskHandler):
             )
 
         if data.from_id and data.from_id == auth_id:
+            return
+
+        # Honor global per-post mute list stored on the comment auto-reply task.
+        muted = await self._muted_media_ids(ctx)
+        if data.media_id and str(data.media_id) in muted:
+            log_event(
+                logger,
+                logging.INFO,
+                "reel_media_muted",
+                comment_id=data.comment_id,
+                media_id=data.media_id,
+            )
             return
 
         spam, _ = is_spam(data.message)
@@ -183,6 +196,14 @@ class ReelEngagementHandler(BaseTaskHandler):
             return False, str(gate)
 
         return True, str(gate)
+
+    async def _muted_media_ids(self, ctx: HandlerContext) -> set[str]:
+        async with ctx.session_factory() as session:
+            task = await TaskRepository(session).get_by_type(TaskType.COMMENT_AUTO_REPLY)
+        if task is None:
+            return set()
+        raw = (task.settings or {}).get("muted_media_ids") or []
+        return {str(x) for x in raw if x}
 
     @staticmethod
     def extract_shortcode(url: str) -> str | None:

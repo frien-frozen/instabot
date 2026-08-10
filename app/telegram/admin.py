@@ -41,6 +41,9 @@ async def build_main_menu_text(settings: Settings) -> str:
         "Commands:",
         "`/enable <id>` · `/disable <id>` · `/toggle <id>`",
         "`/delete <id>` · `/repair` · `/reset`",
+        "`/mute_post <url|id>` — stop comment replies on a post/reel",
+        "`/unmute_post <url|id>` — allow replies again",
+        "`/muted_posts` — list muted posts",
         "`/behaviour` — update assistant behavior (no manual markdown)",
         "`/cancel` — cancel the current wizard",
     ]
@@ -49,6 +52,7 @@ async def build_main_menu_text(settings: Settings) -> str:
 
 MAIN_KEYBOARD = [
     ["📋 Tasks", "➕ Create Task"],
+    ["🔇 Mute Post", "🔊 Unmute Post"],
     ["🔧 Repair Tasks", "♻️ Reset Tasks"],
     ["📊 Statistics", "📝 Logs"],
 ]
@@ -189,6 +193,94 @@ async def create_reel_task(settings: Settings, chat_id: int, wizard: dict[str, A
         f"✅ Reel automation created (task `{task.id}`, media `{media_id}`){extra}\n"
         f"Public: `{wizard.get('public_reply_mode')}` · DM: `{wizard.get('dm_mode')}`"
     )
+
+
+async def _resolve_media_ref(settings: Settings, raw: str) -> str:
+    """Accept a media id or Instagram post/reel URL and return media id."""
+    ref = (raw or "").strip()
+    if not ref:
+        raise ValueError("Empty media reference")
+    if ref.isdigit():
+        return ref
+    ig = InstagramService(settings)
+    return await ig.resolve_media_id_from_url(ref)
+
+
+async def mute_post(settings: Settings, raw_ref: str) -> str:
+    try:
+        media_id = await _resolve_media_ref(settings, raw_ref)
+    except Exception as exc:
+        return f"Could not resolve post/reel: {exc}"
+
+    factory = get_session_factory(settings)
+    async with factory() as session:
+        repo = TaskRepository(session)
+        task = await repo.get_by_type(TaskType.COMMENT_AUTO_REPLY)
+        if task is None:
+            await repo.ensure_defaults()
+            task = await repo.get_by_type(TaskType.COMMENT_AUTO_REPLY)
+        if task is None:
+            return "Comment Auto Reply task not found. Try `/repair`."
+        settings_map = dict(task.settings or {})
+        muted = [str(x) for x in (settings_map.get("muted_media_ids") or []) if x]
+        if media_id in muted:
+            await session.commit()
+            return f"Already muted: `{media_id}`"
+        muted.append(media_id)
+        settings_map["muted_media_ids"] = muted
+        await repo.update(task, settings=settings_map)
+        await session.commit()
+
+    log_event(logger, logging.INFO, "telegram_mute_post", media_id=media_id)
+    return (
+        f"🔇 Comment replies disabled for media `{media_id}`.\n"
+        f"Use `/unmute_post {media_id}` to turn them back on."
+    )
+
+
+async def unmute_post(settings: Settings, raw_ref: str) -> str:
+    try:
+        media_id = await _resolve_media_ref(settings, raw_ref)
+    except Exception as exc:
+        return f"Could not resolve post/reel: {exc}"
+
+    factory = get_session_factory(settings)
+    async with factory() as session:
+        repo = TaskRepository(session)
+        task = await repo.get_by_type(TaskType.COMMENT_AUTO_REPLY)
+        if task is None:
+            return "Comment Auto Reply task not found."
+        settings_map = dict(task.settings or {})
+        muted = [str(x) for x in (settings_map.get("muted_media_ids") or []) if x]
+        if media_id not in muted:
+            return f"Not muted: `{media_id}`"
+        settings_map["muted_media_ids"] = [x for x in muted if x != media_id]
+        await repo.update(task, settings=settings_map)
+        await session.commit()
+
+    log_event(logger, logging.INFO, "telegram_unmute_post", media_id=media_id)
+    return f"🔊 Comment replies enabled again for media `{media_id}`."
+
+
+async def list_muted_posts(settings: Settings) -> str:
+    factory = get_session_factory(settings)
+    async with factory() as session:
+        task = await TaskRepository(session).get_by_type(TaskType.COMMENT_AUTO_REPLY)
+    if task is None:
+        return "Comment Auto Reply task not found. Try `/repair`."
+    muted = [str(x) for x in ((task.settings or {}).get("muted_media_ids") or []) if x]
+    if not muted:
+        return "No muted posts. Use `/mute_post <url>` to silence a post/reel."
+    lines = [
+        "*Muted posts/reels* (no comment replies)",
+        "",
+        "Unmute: `/unmute_post <id>`",
+        "",
+    ]
+    for mid in muted:
+        lines.append(f"• `{mid}`")
+    return "\n".join(lines)
+
 
 def get_wizard(chat_id: int) -> dict[str, Any] | None:
     return _reel_wizards.get(chat_id)

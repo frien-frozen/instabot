@@ -17,10 +17,24 @@ HANDLERS = {
 }
 
 
+def _muted_media_ids(tasks: list[Task]) -> set[str]:
+    for task in tasks:
+        if task.task_type == TaskType.COMMENT_AUTO_REPLY:
+            raw = (task.settings or {}).get("muted_media_ids") or []
+            return {str(x) for x in raw if x}
+    return set()
+
+
 def match_tasks(event: Event, tasks: list[Task]) -> list[Task]:
     """Return enabled tasks that should handle this event."""
     matched: list[Task] = []
     reel_for_media: list[Task] = []
+    muted = _muted_media_ids(tasks)
+    event_media_id = str(event.payload.get("media_id") or "")
+
+    # Admin muted this post/reel — no public comment replies (AI or reel automation).
+    if event.event_type == EventType.COMMENT and event_media_id and event_media_id in muted:
+        return []
 
     for task in tasks:
         if not task.enabled:

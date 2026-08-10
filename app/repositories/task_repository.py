@@ -39,6 +39,8 @@ _DEFAULT_TASKS: tuple[tuple[str, str, int, dict[str, Any]], ...] = (
             "reply_once_per_user": False,
             "delay_min": 3,
             "delay_max": 15,
+            # Instagram media ids (posts/reels) where comment replies are disabled.
+            "muted_media_ids": [],
         },
     ),
     (

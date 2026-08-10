@@ -69,6 +69,17 @@ class CommentTaskHandler(BaseTaskHandler):
         if cfg.get("ignore_own_comments", True) and data.from_id == auth_id:
             return
 
+        muted = {str(x) for x in (cfg.get("muted_media_ids") or []) if x}
+        if data.media_id and str(data.media_id) in muted:
+            log_event(
+                logger,
+                logging.INFO,
+                "comment_media_muted",
+                comment_id=data.comment_id,
+                media_id=data.media_id,
+            )
+            return
+
         spam, reason = is_spam(data.message)
         if spam:
             log_event(logger, logging.INFO, "spam_skipped", comment_id=data.comment_id, reason=reason)
