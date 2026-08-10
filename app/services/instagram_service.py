@@ -13,6 +13,13 @@ from app.utils.logging import get_logger, log_event
 
 logger = get_logger(__name__)
 
+# Appended to every public comment reply.
+COMMENT_CONTACT_FOOTER = (
+    "Doktor Sultonbekni shaxsan o'zlari bilan bog'lanish uchun "
+    "+998776906006 raqami orqali telegramdan yoki docsulton.uz "
+    "saytidan foydalanishingiz mumkin."
+)
+
 
 def _redact_url(url: str) -> str:
     """Remove access tokens from logged URLs."""
@@ -20,6 +27,17 @@ def _redact_url(url: str) -> str:
         return url
     base, _, _ = url.partition("access_token=")
     return f"{base}access_token=***REDACTED***"
+
+
+def append_comment_contact_footer(message: str) -> str:
+    """Ensure the clinic contact footer is at the end of a public comment reply."""
+    body = (message or "").strip()
+    footer = COMMENT_CONTACT_FOOTER
+    if footer in body:
+        return body
+    if not body:
+        return footer
+    return f"{body}\n\n{footer}"
 
 
 class InstagramAPIError(Exception):
@@ -357,7 +375,9 @@ class InstagramService:
         Post a reply to an Instagram comment.
 
         Uses POST /{comment-id}/replies?message=... per Instagram Graph API.
+        Always appends the clinic contact footer.
         """
+        message = append_comment_contact_footer(message)
         log_event(
             logger,
             logging.INFO,
