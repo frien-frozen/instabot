@@ -120,10 +120,10 @@ class TaskRepository:
 
     async def ensure_defaults(self) -> list[str]:
         """
-        Ensure core DM / comment / mention tasks exist and are enabled.
+        Ensure core DM / comment / mention tasks exist.
 
-        Unlike a one-shot seed, this also repairs missing or disabled core tasks
-        even when other tasks (e.g. reel engagement) already exist.
+        Creates missing core tasks. Merges missing settings keys.
+        Does NOT force-enable tasks the admin disabled via Telegram toggle.
         """
         actions: list[str] = []
         for name, task_type, priority, settings in _DEFAULT_TASKS:
@@ -140,32 +140,24 @@ class TaskRepository:
                 continue
 
             changed = False
-            if not existing.enabled:
-                existing.enabled = True
-                changed = True
-                actions.append(f"enabled:{task_type}")
-            # Keep ai_enabled on for core chat tasks (settings may be incomplete).
+            # Fill missing settings only — never overwrite admin choices.
             merged = dict(existing.settings or {})
             for key, value in settings.items():
                 if key not in merged:
                     merged[key] = value
                     changed = True
-            if merged.get("ai_enabled") is False:
-                merged["ai_enabled"] = True
-                changed = True
-                actions.append(f"ai_on:{task_type}")
-            # DMs must require a follow before chatting.
-            if task_type == TaskType.DM_AUTO_REPLY and merged.get("require_follow") is not True:
+            # Keep follow-gate defaults for DMs if unset.
+            if task_type == TaskType.DM_AUTO_REPLY and "require_follow" not in (existing.settings or {}):
                 merged["require_follow"] = True
                 if not merged.get("follow_gate_message"):
                     merged["follow_gate_message"] = settings.get("follow_gate_message")
                 changed = True
-                actions.append(f"follow_gate_on:{task_type}")
+                actions.append(f"follow_gate_default:{task_type}")
             if changed:
                 existing.settings = merged
                 existing.updated_at = datetime.now(timezone.utc)
                 await existing.save()
-                if f"enabled:{task_type}" not in actions and f"ai_on:{task_type}" not in actions:
+                if f"follow_gate_default:{task_type}" not in actions:
                     actions.append(f"repaired:{task_type}")
         return actions
 

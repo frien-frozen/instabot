@@ -95,9 +95,9 @@ async def repair_tasks(settings: Settings) -> str:
     detail = ", ".join(actions) if actions else "already healthy"
     log_event(logger, logging.INFO, "telegram_tasks_repaired", actions=actions)
     return (
-        f"✅ Core tasks repaired ({detail}).\n"
+        f"✅ Core tasks checked ({detail}).\n"
         f"Enabled now: {len(enabled)}/{len(tasks)}\n"
-        "DM, Comment, and Mention auto-replies are ON."
+        "Note: disabled tasks stay OFF — use `/enable <id>` to turn them back on."
     )
 
 
