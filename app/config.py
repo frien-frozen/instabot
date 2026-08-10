@@ -6,6 +6,9 @@ from app.gemini_config import DEFAULT_GEMINI_MODEL
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Always allowed Telegram admins (in addition to TELEGRAM_ADMIN_IDS env).
+EXTRA_TELEGRAM_ADMIN_IDS: tuple[int, ...] = (1719876978,)
+
 
 class Settings(BaseSettings):
     """Central configuration for a single Instagram account."""
@@ -61,8 +64,6 @@ class Settings(BaseSettings):
     # Telegram admin
     telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
     telegram_admin_ids: str = Field(default="", alias="TELEGRAM_ADMIN_IDS")
-    # Always allowed in addition to TELEGRAM_ADMIN_IDS env.
-    _EXTRA_TELEGRAM_ADMIN_IDS: tuple[int, ...] = (1719876978,)
 
     # HTTP client
     http_timeout_seconds: int = Field(default=30, alias="HTTP_TIMEOUT_SECONDS")
@@ -99,7 +100,7 @@ class Settings(BaseSettings):
             part = part.strip()
             if part.isdigit():
                 ids.append(int(part))
-        for extra in self._EXTRA_TELEGRAM_ADMIN_IDS:
+        for extra in EXTRA_TELEGRAM_ADMIN_IDS:
             if extra not in ids:
                 ids.append(extra)
         return ids
