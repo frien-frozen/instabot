@@ -19,7 +19,13 @@ _DEFAULT_TASKS: tuple[tuple[str, str, int, dict[str, Any]], ...] = (
             "delay_min": 0,
             "delay_max": 0,
             "memory_enabled": True,
-            "profile_context_enabled": True,
+            "profile_context_enabled": False,
+            "require_follow": True,
+            "follow_gate_message": (
+                "Assalomu alaykum! 😊\n\n"
+                "Davom etish uchun avval sahifamizga obuna bo'ling, keyin shu yerga yozing — "
+                "yordam beramiz. 🙌"
+            ),
         },
     ),
     (
@@ -148,6 +154,13 @@ class TaskRepository:
                 merged["ai_enabled"] = True
                 changed = True
                 actions.append(f"ai_on:{task_type}")
+            # DMs must require a follow before chatting.
+            if task_type == TaskType.DM_AUTO_REPLY and merged.get("require_follow") is not True:
+                merged["require_follow"] = True
+                if not merged.get("follow_gate_message"):
+                    merged["follow_gate_message"] = settings.get("follow_gate_message")
+                changed = True
+                actions.append(f"follow_gate_on:{task_type}")
             if changed:
                 existing.settings = merged
                 existing.updated_at = datetime.now(timezone.utc)

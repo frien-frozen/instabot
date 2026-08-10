@@ -30,6 +30,12 @@ UNSUPPORTED_MEDIA_REPLY = (
     "Iltimos, savolingizni matn ko'rinishida yozing — shunda yordam bera olaman. 🙏"
 )
 
+DEFAULT_FOLLOW_GATE_REPLY = (
+    "Assalomu alaykum! 😊\n\n"
+    "Davom etish uchun avval sahifamizga obuna bo'ling, keyin shu yerga yozing — "
+    "yordam beramiz. 🙌"
+)
+
 
 class DmTaskHandler(BaseTaskHandler):
     async def handle(self, ctx: HandlerContext, task: Task, event: Event) -> None:
@@ -47,6 +53,53 @@ class DmTaskHandler(BaseTaskHandler):
         recipient = data.sender_id
         if not recipient or recipient == auth_id:
             raise ValueError(f"Invalid DM recipient: {recipient}")
+
+        # Must follow the page before chatting (default on).
+        if cfg.get("require_follow", True):
+            profile = await ig.fetch_user_profile(recipient)
+            if profile.get("is_user_follow_business") is not True:
+                gate = str(
+                    cfg.get("follow_gate_message")
+                    or cfg.get("gate_message")
+                    or DEFAULT_FOLLOW_GATE_REPLY
+                ).strip() or DEFAULT_FOLLOW_GATE_REPLY
+                result = await ig.send_message(recipient, gate)
+                async with ctx.session_factory() as session:
+                    repo = MessageRepository(session)
+                    conversation = await repo.get_or_create_conversation(
+                        user_id=recipient,
+                        account_id=data.account_id,
+                    )
+                    await repo.store_message(
+                        conversation,
+                        message_id=data.message_id,
+                        sender_id=data.sender_id,
+                        text=data.text or "[follow_gate]",
+                        direction="incoming",
+                        timestamp=MessageRepository.timestamp_from_ms(data.timestamp),
+                    )
+                    outgoing_id = str(
+                        result.get("message_id") or result.get("id") or f"out_{data.message_id}"
+                    )
+                    await repo.store_message(
+                        conversation,
+                        message_id=outgoing_id,
+                        sender_id=auth_id,
+                        text=gate,
+                        direction="outgoing",
+                    )
+                    await repo.mark_reply_sent(data.message_id)
+                    await session.commit()
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "dm_follow_gate_sent",
+                    task_id=task.id,
+                    event_id=event.event_id,
+                    recipient_id=recipient,
+                    follows=profile.get("is_user_follow_business"),
+                )
+                return
 
         # Voice / image / video / sticker without text → fixed reply, skip Gemini.
         if data.unsupported_media or (
