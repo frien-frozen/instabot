@@ -20,21 +20,32 @@ DEFAULT_GEMINI_MODEL = GEMINI_FLASH_LITE_LATEST
 GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/"
 GEMINI_API_VERSION = "v1beta"
 
-# Only Flash-Lite variants are allowed — non-lite flash/pro burn credits fast.
+# Allowed Gemini models (Flash-Lite and Flash tier models)
 KNOWN_GEMINI_ALIASES = frozenset({
     GEMINI_FLASH_LITE_LATEST,
+    GEMINI_FLASH_LATEST,
     GEMINI_25_FLASH_LITE,
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
     "gemini-2.0-flash-lite-001",
+    "gemini-1.5-flash",
 })
 
-# Anything matching these patterns is forced down to Flash-Lite (cost protection).
+# Automatic fallback chain when 429 quota is hit on a free-tier model
+FALLBACK_GEMINI_MODELS = (
+    GEMINI_FLASH_LITE_LATEST,
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    GEMINI_FLASH_LATEST,
+)
+
+# Expensive models that burn budget or are unsupported (Pro, Ultra, Gemma, etc.)
 _EXPENSIVE_MODEL = re.compile(
     r"(pro|ultra|thinking|exp|preview|gemma|imagen|veo)",
     re.IGNORECASE,
 )
-
-_gemini_ready = False
 
 
 def get_gemini_api_endpoint() -> str:
@@ -54,7 +65,7 @@ def normalize_gemini_model(configured: str | None) -> str:
     Resolve the model ID from configuration.
 
     Empty / gemma / Pro / expensive models → Flash-Lite (default).
-    Non-lite flash (e.g. gemini-2.0-flash) is also forced to Flash-Lite.
+    Flash and Flash-Lite models are allowed.
     """
     model = (configured or "").strip()
     if not model:
@@ -69,17 +80,8 @@ def normalize_gemini_model(configured: str | None) -> str:
         )
         return DEFAULT_GEMINI_MODEL
 
-    if model in KNOWN_GEMINI_ALIASES or "flash-lite" in lower:
+    if model in KNOWN_GEMINI_ALIASES or "flash" in lower:
         return model
-
-    # Non-lite flash is ~3x Flash-Lite — force lite.
-    if "flash" in lower and "lite" not in lower:
-        logger.warning(
-            "gemini_model_forced_cheap configured=%s resolved=%s reason=non_lite_flash",
-            model,
-            DEFAULT_GEMINI_MODEL,
-        )
-        return DEFAULT_GEMINI_MODEL
 
     logger.warning(
         "gemini_model_forced_cheap configured=%s resolved=%s reason=unknown_model",

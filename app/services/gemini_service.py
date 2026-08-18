@@ -14,6 +14,7 @@ from google.genai import types
 from app.config import Settings
 from app.gemini_config import (
     DEFAULT_GEMINI_MODEL,
+    FALLBACK_GEMINI_MODELS,
     get_gemini_api_endpoint,
     get_gemini_sdk_version,
     normalize_gemini_model,
@@ -277,10 +278,12 @@ class GeminiService:
         )
 
         last_error: GeminiAPIError | None = None
-        for attempt in range(1, 3):  # max 2 attempts — retries multiply spend
+        models_to_try = [self._model] + [m for m in FALLBACK_GEMINI_MODELS if m != self._model]
+
+        for target_model in models_to_try:
             try:
                 reply = await self._generate_with_model(
-                    self._model,
+                    target_model,
                     user_content,
                     system_prompt,
                     max_output_tokens=max_output_tokens,
@@ -289,9 +292,8 @@ class GeminiService:
                     logger,
                     logging.INFO,
                     "gemini_response",
-                    model=self._model,
+                    model=target_model,
                     reply_text=reply,
-                    attempt=attempt,
                 )
                 return reply
 
@@ -301,27 +303,15 @@ class GeminiService:
                     logger,
                     logging.WARNING if retryable else logging.ERROR,
                     "gemini_api_error",
-                    model=self._model,
-                    attempt=attempt,
+                    model=target_model,
                     error=str(exc),
                     retryable=retryable,
                 )
 
                 if not retryable:
-                    raise GeminiAPIError(str(exc), model=self._model) from exc
+                    raise GeminiAPIError(str(exc), model=target_model) from exc
 
-                last_error = GeminiAPIError(str(exc), model=self._model)
-                if attempt < 2:
-                    wait = 2**attempt
-                    log_event(
-                        logger,
-                        logging.INFO,
-                        "gemini_retry_wait",
-                        model=self._model,
-                        wait_seconds=wait,
-                        attempt=attempt,
-                    )
-                    await asyncio.sleep(wait)
+                last_error = GeminiAPIError(str(exc), model=target_model)
 
         if last_error:
             raise last_error
@@ -380,36 +370,40 @@ class GeminiService:
         blocks.append(f"Comment to classify:\n{comment_text}")
         blocks.append('Respond with JSON only, e.g. {"intent":"Supportive"}')
 
-        try:
-            response = await self._client.aio.models.generate_content(
-                model=self._model,
-                contents="\n\n".join(blocks),
-                config=self._gen_config(
-                    system_instruction=system,
-                    temperature=0.1,
-                    max_output_tokens=40,
-                ),
-            )
-            parsed = self._parse_json_object(response.text or "")
-            intent = str((parsed or {}).get("intent") or "").strip()
-            for label in COMMENT_INTENTS:
-                if intent.lower() == label.lower():
-                    log_event(
-                        logger,
-                        logging.INFO,
-                        "comment_intent_classified",
-                        intent=label,
-                        comment_text=comment_text,
-                    )
-                    return label
-        except Exception as exc:
-            log_event(
-                logger,
-                logging.WARNING,
-                "comment_intent_classify_failed",
-                error=str(exc),
-                comment_text=comment_text,
-            )
+        models_to_try = [self._model] + [m for m in FALLBACK_GEMINI_MODELS if m != self._model]
+        for target_model in models_to_try:
+            try:
+                response = await self._client.aio.models.generate_content(
+                    model=target_model,
+                    contents="\n\n".join(blocks),
+                    config=self._gen_config(
+                        system_instruction=system,
+                        temperature=0.1,
+                        max_output_tokens=40,
+                    ),
+                )
+                parsed = self._parse_json_object(response.text or "")
+                intent = str((parsed or {}).get("intent") or "").strip()
+                for label in COMMENT_INTENTS:
+                    if intent.lower() == label.lower():
+                        log_event(
+                            logger,
+                            logging.INFO,
+                            "comment_intent_classified",
+                            intent=label,
+                            comment_text=comment_text,
+                            model=target_model,
+                        )
+                        return label
+            except Exception as exc:
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "comment_intent_classify_failed",
+                    error=str(exc),
+                    comment_text=comment_text,
+                    model=target_model,
+                )
 
         return "Question"
 
@@ -453,57 +447,61 @@ class GeminiService:
             f"Latest user message:\n{latest_message}"
         )
 
-        try:
-            response = await self._client.aio.models.generate_content(
-                model=self._model,
-                contents=user_content,
-                config=self._gen_config(
-                    system_instruction=system,
-                    temperature=0.1,
-                    max_output_tokens=350,
-                ),
-            )
-            parsed = self._parse_json_object(response.text or "")
-            if not parsed:
-                log_event(logger, logging.WARNING, "lead_extract_parse_failed", raw=response.text)
-                return {"lead_collected": False}
-
-            # Fold intake fields the CRM schema does not store as columns into the summary.
-            summary = str(parsed.get("conversation_summary") or "").strip()
-            extras: list[str] = []
-            age = str(parsed.get("age") or "").strip()
-            duration = str(parsed.get("problem_duration") or "").strip()
-            if age and "age" not in summary.lower() and "yosh" not in summary.lower():
-                extras.append(f"Age: {age}")
-            if duration and "duration" not in summary.lower() and "davomiylik" not in summary.lower():
-                extras.append(f"Problem duration: {duration}")
-            if extras:
-                parsed["conversation_summary"] = (
-                    f"{summary} {' '.join(extras)}".strip() if summary else " ".join(extras)
+        models_to_try = [self._model] + [m for m in FALLBACK_GEMINI_MODELS if m != self._model]
+        for target_model in models_to_try:
+            try:
+                response = await self._client.aio.models.generate_content(
+                    model=target_model,
+                    contents=user_content,
+                    config=self._gen_config(
+                        system_instruction=system,
+                        temperature=0.1,
+                        max_output_tokens=350,
+                    ),
                 )
+                parsed = self._parse_json_object(response.text or "")
+                if not parsed:
+                    log_event(logger, logging.WARNING, "lead_extract_parse_failed", raw=response.text, model=target_model)
+                    continue
 
-            # Enforce minimum intake before export (natural conversation policy).
-            required_ok = all(
-                str(parsed.get(key) or "").strip()
-                for key in ("name", "phone", "problem")
-            )
-            parsed["lead_collected"] = bool(parsed.get("lead_collected")) and required_ok
+                # Fold intake fields the CRM schema does not store as columns into the summary.
+                summary = str(parsed.get("conversation_summary") or "").strip()
+                extras: list[str] = []
+                age = str(parsed.get("age") or "").strip()
+                duration = str(parsed.get("problem_duration") or "").strip()
+                if age and "age" not in summary.lower() and "yosh" not in summary.lower():
+                    extras.append(f"Age: {age}")
+                if duration and "duration" not in summary.lower() and "davomiylik" not in summary.lower():
+                    extras.append(f"Problem duration: {duration}")
+                if extras:
+                    parsed["conversation_summary"] = (
+                        f"{summary} {' '.join(extras)}".strip() if summary else " ".join(extras)
+                    )
 
-            log_event(
-                logger,
-                logging.INFO,
-                "lead_extract_ok",
-                lead_collected=bool(parsed.get("lead_collected")),
-                has_name=bool(parsed.get("name")),
-                has_age=bool(age),
-                has_city=bool(parsed.get("city")),
-                has_phone=bool(parsed.get("phone")),
-                has_problem=bool(parsed.get("problem")),
-            )
-            return parsed
-        except Exception as exc:
-            log_event(logger, logging.WARNING, "lead_extract_failed", error=str(exc))
-            return {"lead_collected": False}
+                # Enforce minimum intake before export (natural conversation policy).
+                required_ok = all(
+                    str(parsed.get(key) or "").strip()
+                    for key in ("name", "phone", "problem")
+                )
+                parsed["lead_collected"] = bool(parsed.get("lead_collected")) and required_ok
+
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "lead_extract_ok",
+                    lead_collected=bool(parsed.get("lead_collected")),
+                    has_name=bool(parsed.get("name")),
+                    has_age=bool(age),
+                    has_city=bool(parsed.get("city")),
+                    has_phone=bool(parsed.get("phone")),
+                    has_problem=bool(parsed.get("problem")),
+                    model=target_model,
+                )
+                return parsed
+            except Exception as exc:
+                log_event(logger, logging.WARNING, "lead_extract_failed", error=str(exc), model=target_model)
+
+        return {"lead_collected": False}
 
     async def plan_behavior_targets(
         self,
