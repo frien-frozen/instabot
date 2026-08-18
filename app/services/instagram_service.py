@@ -40,6 +40,18 @@ def append_comment_contact_footer(message: str) -> str:
     return f"{body}\n\n{footer}"
 
 
+def sanitize_text_for_instagram_links(text: str) -> str:
+    """Strip protocol schemes and domain formatting if Meta API blocks raw URL link sharing."""
+    import re
+    cleaned = (text or "").strip()
+    cleaned = re.sub(r"https?://(?:www\.)?t\.me/([a-zA-Z0-9_]+)", r"Telegram: \1", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"t\.me/([a-zA-Z0-9_]+)", r"Telegram: \1", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"https?://(?:www\.)?", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"([a-zA-Z0-9]+)\.uz", r"\1 uz", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"([a-zA-Z0-9]+)\.com", r"\1 com", cleaned, flags=re.IGNORECASE)
+    return cleaned
+
+
 class InstagramAPIError(Exception):
     """Raised when the Instagram Graph API returns an error."""
 
@@ -337,14 +349,37 @@ class InstagramService:
             reply_text=text,
             ig_user_id=ig_user_id,
         )
-        result = await self._request(
-            "POST",
-            f"{ig_user_id}/messages",
-            json_body={
-                "recipient": {"id": recipient_id},
-                "message": {"text": text},
-            },
-        )
+        try:
+            result = await self._request(
+                "POST",
+                f"{ig_user_id}/messages",
+                json_body={
+                    "recipient": {"id": recipient_id},
+                    "message": {"text": text},
+                },
+            )
+        except InstagramAPIError as exc:
+            if exc.error_subcode == 2534122 or exc.error_code == 508 or "link can't be shared" in str(exc).lower():
+                sanitized = sanitize_text_for_instagram_links(text)
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "instagram_link_blocked_sanitizing",
+                    recipient_id=recipient_id,
+                    original_text=text,
+                    sanitized_text=sanitized,
+                    error=str(exc),
+                )
+                result = await self._request(
+                    "POST",
+                    f"{ig_user_id}/messages",
+                    json_body={
+                        "recipient": {"id": recipient_id},
+                        "message": {"text": sanitized},
+                    },
+                )
+            else:
+                raise
         log_event(
             logger,
             logging.INFO,
