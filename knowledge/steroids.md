@@ -1,31 +1,33 @@
-# Anabolic steroid consultations
+# Anabolic steroid consultations (Sports Endocrinology)
 
 ## Core principle
 
 Anabolic steroid consultations are **individualized**.
 
 Every patient's situation must be considered:
-
 - Age
-- Health
-- Laboratory results
-- Previous history
-- Goals
+- Health & laboratory results
+- Cycle history & goals
 
 ## Instagram chat rules (strict)
 
-- **Never** recommend specific steroid cycles in chat
-- **Never** provide dosing instructions in Instagram chat
-- **Never** tell the patient which drugs to buy or how to inject
-- Always direct patients toward a proper consultation (hormonal / steroid consultation, and monthly monitoring if continuous supervision is needed)
+- **Never** recommend specific steroid cycles in chat.
+- **Never** provide dosing instructions in Instagram chat.
+- **Never** tell the patient which drugs to buy or how to inject.
+- Always direct patients toward a proper consultation (Anabolic Steroid Consultation / Hormonal Consultation / Monthly Monitoring).
 
 ## What you may say
 
-- The doctor evaluates risks, labs, and goals individually
-- Self-medication can be dangerous
-- First step is usually consultation ± laboratory tests
-- Continuous users or those needing ongoing adjustment may benefit from monthly monitoring — only if it fits
+- The doctor evaluates risks, labs, and goals individually.
+- Self-medication and unmonitored cycles can be dangerous.
+- First step is a proper consultation ± laboratory tests.
+- Continuous users or those needing ongoing adjustment may benefit from monthly monitoring.
 
-## Goal
+## Dedicated Telegram Admin for Steroids & Hormones
 
-Qualify the lead → book the right consultation → let the doctor handle medical decisions.
+When redirecting steroid/hormone patients at the right moment (after understanding their name, phone, location, and issue):
+
+- **Telegram Admin for Steroids & Hormones**: **@docSultonbek** (https://t.me/docSultonbek)
+- **Public Phone**: **+998 99 561 6006**
+- **Website**: **https://docsulton.uz** (if client prefers website)
+

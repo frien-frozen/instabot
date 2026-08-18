@@ -1,79 +1,33 @@
-# Services
+# Services & Operations (from docsulton.uz)
 
 Use this knowledge naturally when recommending the right next step.
 Do not dump the full list unless the patient asks.
 Do not mention prices.
 
-## Conditions commonly addressed
+## Conditions & Services Addressed
 
-- Erectile dysfunction
-- Premature ejaculation
-- Male infertility
-- Kidney stones
-- Prostate enlargement
-- Urological inflammations
-- Testosterone replacement therapy
-- Anabolic steroid consultation
+- **Urology & Andrology**: Erectile dysfunction, premature ejaculation, male infertility, kidney stones, prostate enlargement/inflammation, urological infections.
+- **Hormones & Sports Endocrinology**: Anabolic steroid consultations, PCT (Post Cycle Therapy), testosterone optimization, adolescent hormonal imbalance.
+- **Surgical Operations**: Marmar varicocele surgery, Micro TESE, Ligamentotomy, Penile prosthesis, Selective denervation, Laser stone surgery, Winkelmann operation, TUR prostate surgery, HoLEP prostate surgery, Laparoscopic urology operations.
 
-## Operations (after individual examination)
+## Consultation Formats
 
-- Marmar varicocele surgery
-- Micro TESE
-- Ligamentotomy
-- Penile prosthesis
-- Selective denervation
-- Kidney stone laser surgery
-- Winkelmann operation
-- TUR prostate surgery
-- HoLEP prostate surgery
-- Laparoscopic urology operations
+1. **Daytime Consultation**
+   - **Hours**: 09:00–16:00 (Monday – Saturday)
+   - **Format**: Online (video call) & Offline (at City Med Ferti Center EKO korpus, Tashkent)
+   - **Categories**: Urological Consultation, Hormonal Consultation, Anabolic Steroid Consultation.
 
-## Daytime consultation
+2. **Evening Consultation**
+   - **Hours**: 19:00–22:00 (Monday – Friday)
+   - **Format**: Online video consultation (convenient for patients after work).
 
-**Hours:** 09:00–16:00  
-**Format:** Online and offline
+3. **Monthly Monitoring**
+   - **Format**: Continuous Telegram support, weekly check-ins, lab monitoring, and doctor adjustments for ongoing hormone/steroid supervision.
 
-### Categories
+## Consultation Workflow
 
-1. **Urological consultation**
-2. **Hormonal consultation**
-3. **Anabolic steroid consultation**
+- **Step 1**: Initial inquiry on Instagram DM -> Administrator speaks warmly and learns Name, Phone, Location, and Main Complaint.
+- **Step 2**: Administrator recommends the proper consultation or operation evaluation.
+- **Step 3**: Administrator guides patient at the right moment to Telegram (**@docSultonbekk** for Urology / **@docSultonbek** for Steroids) or to **https://docsulton.uz**.
+- **Step 4**: First consult -> Lab tests requested if needed -> Second consult for individualized treatment plan or surgery scheduling.
 
-### First consultation includes
-
-- Complaint analysis
-- Discussing probable causes (not a final diagnosis in chat)
-- Answering patient questions
-- Requesting laboratory tests if necessary
-
-### Second consultation includes
-
-- Reviewing laboratory results
-- Preparing an individualized treatment plan
-- Answering remaining questions
-
-## Evening consultation
-
-**Hours:** 19:00–22:00  
-**Format:** Evening **online** consultation
-
-Do not discuss cost differences. Administrator / Telegram explains organizational details.
-
-## Monthly monitoring
-
-Recommend **only** when the patient clearly needs continuous supervision.
-Never push aggressively.
-
-### Includes
-
-- Continuous Telegram support
-- Weekly follow-up
-- Repeated online consultations
-- Laboratory monitoring
-- Adjustments by the doctor (never give doses in Instagram)
-- Nutrition / supplements / hormone questions / PCT guidance / progress monitoring
-
-### When to suggest it
-
-Ongoing hormone/steroid supervision, weekly check-ins, complex lab follow-up, or the patient asks for continuous support.
-If they only need a one-time consult — recommend daytime/evening consultation instead.

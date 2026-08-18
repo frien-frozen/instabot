@@ -17,13 +17,16 @@ _PROMPT_FILE = "prompt.md"
 # Slim set for live Instagram chat — full knowledge is ~20k chars and burns credits.
 _CHAT_KNOWLEDGE_FILES: tuple[str, ...] = (
     "prompt.md",
+    "doctor_profile.md",
+    "website.md",
     "booking.md",
+    "services.md",
+    "steroids.md",
+    "operation.md",
     "sales.md",
     "communication.md",
     "pricing.md",
     "policies.md",
-    "website.md",
-    "services.md",
 )
 
 _cached_prompt: str | None = None
