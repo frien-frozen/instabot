@@ -1,47 +1,46 @@
 # Website & contacts — https://docsulton.uz
 
-Official source of detailed information about services, operations, and medical articles:
+Official source of detailed information about services, operations, medical articles, and online booking:
 
-**https://docsulton.uz**
+**docsulton.uz**
 
-If someone prefers reading articles, checking full service details, or booking online, offer the website link: **https://docsulton.uz**
+## Contact Channels (Provide efficiently without stretching chat)
 
-## Telegram Administrators (Separate Handles)
+Provide all 3 options proactively so the patient can choose whichever is most convenient for them:
 
-Present Telegram redirection at the right moment (after understanding the patient's situation and intake details):
+1. **Phone Number**: **+998 99 561 6006**
+2. **Telegram Administrator**:
+   - **Urology / Andrology / Operations**: `Telegram: docSultonbekk` (https://t.me/docSultonbekk)
+   - **Anabolic Steroids / Hormones**: `Telegram: docSultonbek` (https://t.me/docSultonbek)
+3. **Official Website**: **docsulton.uz** (or `/uz/consultation`)
 
-1. **Urology & Andrology & Operations**:
-   - Telegram Admin: **@docSultonbekk** (Link: https://t.me/docSultonbekk)
-   - Handles: All urological concerns, erectile dysfunction, male infertility, kidney stones, prostate issues, and surgical operations.
+Ask the client: *"Sizga qaysi biri qulayroq — telefon orqali bog'lanish, Telegram'da yozish yoki saytimiz orqali yozilish?"*
 
-2. **Anabolic Steroids & Hormones & Sports Endocrinology**:
-   - Telegram Admin: **@docSultonbek** (Link: https://t.me/docSultonbek)
-   - Handles: Anabolic steroid cycles monitoring, hormone health, PCT, sports endocrinology, adolescent hormonal imbalances.
+## How to Book on the Website (Step-by-Step Guide)
 
-3. **Official Channel**:
-   - Telegram Channel: **@sultonbekdr** (Link: https://t.me/sultonbekdr)
+If a patient asks how to book on the website ("saytda qanday yozilsa bo'ladi?" or "saytdan qanday band qilinadi?"), guide them step-by-step:
 
-## Contact & Location (public)
+1. **Saytga kiring**: **docsulton.uz** saytiga kiring.
+2. **Konsultatsiyani tanlang**: Bosh sahifadagi **"Konsultatsiyaga yozilish"** tugmasini bosing (yoki xizmatlar bo'limidan mos xizmatni tanlang).
+3. **Sana va vaqtni belgilang**: Sizga qulay sana hamda mavjud vaqtni tanlang.
+4. **Ma'lumotlarni kiriting**: Ismingiz, telefon raqamingiz va muammoingiz haqida qisqacha izoh kiriting.
+5. **Tasdiqlang**: "Yuborish" tugmasini bosing — adminlarimiz tez orada siz bilan bog'lanishadi!
 
-- Phone: **+998 99 561 6006**
-- Email: **leon.life2018@gmail.com**
-- Location: **City Med (Ferti Center EKO korpus)**, Tashkent, Uzbekistan
-- Hours (as published on website):
+## Location & Hours (public)
+
+- **Phone**: **+998 99 561 6006**
+- **Location**: **City Med (Ferti Center EKO korpus)**, Tashkent, Uzbekistan
+- **Hours**:
   - Daytime Consultations: **Monday – Saturday: 09:00 – 16:00** (Online & Offline)
   - Evening Consultations: **Monday – Friday: 19:00 – 22:00** (Online)
 
-## Website Navigation & Structure
+## Website Navigation
 
-- **Home (`/uz`)**: Positioning, qualifications, statistics, CTA to book or consult admin.
-- **Services (`/uz/services`)**: Urological consultations, hormonal consultations, anabolic steroid consultations, operations.
-- **About (`/uz/about`)**: Biography of Dr. Sultonbek Norkuziev, education, qualifications, EAU membership.
-- **Blog (`/uz/blog`)**: Articles on men's health, urology, hormones, and sports medicine.
-- **Contact (`/uz/contact`)**: Clinic address, working hours, and admin contacts.
+- **Home (`/uz`)**: Overview, doctor bio, statistics, booking CTA.
+- **Services (`/uz/services`)**: Urological consultations, hormonal consultations, steroid consultations, operations.
+- **Booking (`/uz/consultation`)**: Online consultation booking portal.
+- **About (`/uz/about`)**: Dr. Sultonbek Norkuziev biography, EAU membership, education.
+- **Blog (`/uz/blog`)**: Articles on men's health, urology, and sports endocrinology.
+- **Contact (`/uz/contact`)**: Clinic address, working hours, contacts.
 
-## Consultation process
-
-1. Patient reaches out on Instagram DM.
-2. Administrator listens, speaks warmly, and naturally learns their Name, Phone, Location, and Main Complaint.
-3. Administrator recommends the proper consultation (Urological, Hormonal, Steroid, or Operation evaluation).
-4. Administrator guides to the correct Telegram handle (`@docSultonbekk` for Urology / `@docSultonbek` for Steroids) or gives the site `https://docsulton.uz` if the client prefers.
 
