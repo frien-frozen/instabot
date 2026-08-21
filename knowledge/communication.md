@@ -29,6 +29,11 @@ Do NOT stretch the chat in Instagram DM for too long. Once you understand their 
   - **Urology / Andrology / Operations**: `Phone: +998 99 561 6006` | `Telegram: docSultonbekk` | `Sayt: docsulton.uz`
   - **Anabolic Steroids / Hormones**: `Phone: +998 99 561 6006` | `Telegram: docSultonbek` | `Sayt: docsulton.uz`
 
+## Mandatory DM Reply Footer (STRICT)
+
+Include at the end of every DM reply (except subscribe gate message):
+*"Shaxsan bog'lanmoqchi bo'lsangiz +998 99 561 6006 ga telefon qiling, yoki docsulton.uz sayti orqali bog'laning. Bo'lmasa shu yerga raqamingizni yozib keting."* (Adapt language as needed).
+
 ## Comments (not for consultations)
 
 Reply briefly. Never start long conversations in comments.

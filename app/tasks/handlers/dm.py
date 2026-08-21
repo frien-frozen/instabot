@@ -36,6 +36,22 @@ DEFAULT_FOLLOW_GATE_REPLY = (
     "yordam beramiz. 🙌"
 )
 
+DM_CONTACT_FOOTER = (
+    "Shaxsan bog'lanmoqchi bo'lsangiz +998 99 561 6006 ga telefon qiling, "
+    "yoki docsulton.uz sayti orqali bog'laning. Bo'lmasa shu yerga raqamingizni yozib keting."
+)
+
+
+def append_dm_contact_footer(message: str) -> str:
+    """Ensure the standard DM contact footer is appended to every AI DM reply."""
+    body = (message or "").strip()
+    footer = DM_CONTACT_FOOTER
+    if not body:
+        return footer
+    if "+998 99 561 6006" in body or "Shaxsan bog'lanmoqchi" in body:
+        return body
+    return f"{body}\n\n{footer}"
+
 
 class DmTaskHandler(BaseTaskHandler):
     async def handle(self, ctx: HandlerContext, task: Task, event: Event) -> None:
@@ -240,8 +256,9 @@ class DmTaskHandler(BaseTaskHandler):
             personality_override=prompt,
             memory_context=memory or None,
             profile_context=profile_context,
-            max_output_tokens=140,
+            max_output_tokens=220,
         )
+        reply_text = append_dm_contact_footer(reply_text)
 
         result = await ig.send_message(recipient, reply_text)
 
